@@ -107,3 +107,34 @@ def test_outputs_write(tmp_path):
     assert ws["B16"].value == "Assembly Level"
     row17 = [c.value for c in ws[17] if c.value is not None]
     assert "Qty (Total)" in row17
+
+
+def test_html_xlsx_download_link(tmp_path):
+    """D5: explicit xlsx_href lands in the download button, escaped."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, xlsx_href="o.xlsx")
+    page = h.read_text(encoding="utf-8")
+    assert 'id="dl"' in page and 'href="o.xlsx"' in page
+    # no href known -> empty attribute (button removes itself client-side)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+    assert 'href=""' in h.read_text(encoding="utf-8")
+
+
+def test_cli_both_links_sibling_xlsx(tmp_path):
+    """--both into one directory -> button links the .xlsx by filename,
+    the layout scripts/build_pages.sh deploys to GitHub/GitLab Pages."""
+    rc = bomgen.main([str(SAMPLE_CSV), "--both", "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "NCC-1701_pdmout_BOM.html").read_text(encoding="utf-8")
+    assert 'href="NCC-1701_pdmout_BOM.xlsx"' in page
+    assert (tmp_path / "NCC-1701_pdmout_BOM.xlsx").exists()
+
+
+def test_cli_xlsx_url_override(tmp_path):
+    rc = bomgen.main([str(SAMPLE_CSV), "--html", str(tmp_path / "o.html"),
+                      "--xlsx-url", "https://example.com/bom.xlsx", "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "o.html").read_text(encoding="utf-8")
+    assert 'href="https://example.com/bom.xlsx"' in page

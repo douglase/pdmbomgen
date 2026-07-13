@@ -416,7 +416,11 @@ def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
 # --------------------------------------------------------------------------- html
 
 def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
-               warnings: list[str]) -> None:
+               warnings: list[str], xlsx_href: str = "") -> None:
+    """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
+    download button is removed client-side). When publishing to GitHub or
+    GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
+    works on both (see PAGES_SETUP.md)."""
     proj = cfg["project"]
     passthrough = list(cfg["columns"].get("passthrough", []))
     nodes = preorder(root)
@@ -440,6 +444,7 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                 " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
             .replace("__SOURCE__", html.escape(src_name))
+            .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
             .replace("__WARNINGS__", html.escape("; ".join(warnings)) if warnings else ""))
     out.write_text(page, encoding="utf-8")
 
@@ -453,6 +458,10 @@ def main(argv=None) -> int:
     ap.add_argument("--xlsx", type=Path, nargs="?", const=True, default=None)
     ap.add_argument("--html", type=Path, nargs="?", const=True, default=None)
     ap.add_argument("--both", action="store_true")
+    ap.add_argument("--xlsx-url", default=None, metavar="URL",
+                    help="href for the HTML download button (default: the "
+                         ".xlsx filename when both outputs land in the same "
+                         "directory, as on a Pages deploy; omitted otherwise)")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -477,15 +486,23 @@ def main(argv=None) -> int:
     a.outdir.mkdir(parents=True, exist_ok=True)
     stem = a.input.stem
     did = False
+    xlsx_out: Path | None = None
     if a.xlsx or a.both:
-        p = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
-        write_excel(root, cfg, p)
+        xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
+        write_excel(root, cfg, xlsx_out)
         did = True
         if not a.quiet:
-            print(f"wrote {p}")
+            print(f"wrote {xlsx_out}")
     if a.html or a.both:
         p = a.html if isinstance(a.html, Path) else a.outdir / f"{stem}_BOM.html"
-        write_html(root, cfg, a.input.name, p, warnings)
+        href = a.xlsx_url
+        if href is None:
+            # sibling .xlsx from the same run -> relative link survives any
+            # hosting root (GitHub Pages, GitLab Pages, file://, S3, ...)
+            same_dir = (xlsx_out is not None
+                        and xlsx_out.resolve().parent == p.resolve().parent)
+            href = xlsx_out.name if same_dir else ""
+        write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href)
         did = True
         if not a.quiet:
             print(f"wrote {p}")

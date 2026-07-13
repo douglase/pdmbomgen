@@ -7,7 +7,8 @@ human-readable, shareable reports:
   band, numeric Level, Qty (Assembly) / Qty (Total) roll-up, native Excel
   row grouping for collapsible subassemblies.
 - **HTML** — a single self-contained file (no server, no internet): 
-  collapsible tree, live filtering, expand-to-level buttons, copy-as-TSV.
+  collapsible tree, live filtering, expand-to-level buttons, copy-as-TSV,
+  and a **Download Excel** button linking the sibling .xlsx.
 
 Configurable for any PDM vault via `bomgen.toml`.
 
@@ -25,7 +26,7 @@ Requires Python ≥ 3.11 (stdlib `tomllib`).
 
 ```
 python bomgen.py INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
-                                 [--both] [-o OUTDIR] [--quiet]
+                                 [--both] [--xlsx-url URL] [-o OUTDIR] [--quiet]
 ```
 
 - **CSV** — the interactive path: PDM BOM tab → export. Tip: do **not**
@@ -43,6 +44,25 @@ python bomgen.py INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
 Configuration (project title block, column-name mapping, part-number
 regex, passthrough columns) lives in `bomgen.toml` — see the comments
 there and design doc §6.
+
+When `--both` (or `--xlsx` and `--html` together) writes both files into
+the same directory, the HTML's **Download Excel** button links the .xlsx by
+relative filename automatically; `--xlsx-url` overrides the link target,
+and the button removes itself when no .xlsx location is known.
+
+## Publishing to GitHub / GitLab Pages
+
+The repo ships CI configs for both services that compile the BOM on every
+push to the default branch and deploy `index.html` + the `.xlsx` together,
+so the download button works on the published page:
+
+- GitHub: `.github/workflows/pages.yml` (Settings → Pages → Source =
+  GitHub Actions)
+- GitLab: `.gitlab-ci.yml` (picked up automatically)
+
+Both call `scripts/build_pages.sh` and publish the example BOM by default —
+point `BOM_INPUT`/`BOM_CONFIG` in the CI file at your own export.
+**Step-by-step setup for both services: [`PAGES_SETUP.md`](PAGES_SETUP.md).**
 
 ## Design & decisions
 

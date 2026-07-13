@@ -13,8 +13,8 @@ header h1{margin:0;font-size:20px}
 header .meta{color:var(--muted);font-size:12.5px;margin-top:4px}
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 22px;position:sticky;top:0;background:#fbfaf7;border-bottom:1px solid var(--line);z-index:2}
 #controls input{flex:1 1 220px;max-width:340px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px}
-button{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer}
-button:hover{border-color:var(--accent);color:var(--accent)}
+button,a.btn{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer;color:inherit;text-decoration:none;display:inline-block}
+button:hover,a.btn:hover{border-color:var(--accent);color:var(--accent)}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{position:sticky;top:52px;background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em;z-index:1}
@@ -44,6 +44,7 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
   <button data-x="none">Collapse all</button>
   <span id="lvlbtns"></span>
   <button id="copy">Copy TSV</button>
+  <a id="dl" class="btn" href="__XLSX_HREF__" download>&#8681; Download Excel (.xlsx)</a>
   <span id="count" style="color:var(--muted);font-size:12px"></span>
 </div>
 <table id="t"><thead><tr id="hrow">
@@ -127,6 +128,8 @@ document.getElementById("copy").onclick = () => {
   navigator.clipboard.writeText(lines.join("\n"));
 };
 const W = "__WARNINGS__"; if (W) document.getElementById("warns").textContent = " · Parser warnings: " + W;
+// download button only renders when bomgen knew where the .xlsx lives
+const dl = document.getElementById("dl"); if (!dl.getAttribute("href")) dl.remove();
 render();
 </script>
 </body>

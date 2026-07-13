@@ -215,7 +215,38 @@ Features (all vanilla JS, ~300 lines):
   visible), **Copy TSV** (visible rows → clipboard, pasteable into Excel).
 - Columns: Level path, Part Number, Part Name, Description, COTS badge,
   Qty, Qty Total, State, + passthrough. Column set driven by the same config.
+- **Download Excel button** *(Decision D5, 2026-07-13)*: an `<a download>`
+  in the controls bar pointing at the report's .xlsx twin. The href is
+  injected at generation time (`__XLSX_HREF__`): `--xlsx-url` if given,
+  else the .xlsx **filename** when the same run writes both outputs into
+  the same directory, else empty — and an empty href removes the button
+  client-side. A relative href is deliberately host-agnostic: it works on
+  GitHub Pages, GitLab Pages, `file://`, and plain file shares, with no
+  service detection. The self-contained-file guarantee is unchanged — the
+  page makes no request unless the button is clicked, and a downloaded
+  HTML sans .xlsx simply drops the button.
 - Print stylesheet: tree fully expanded, controls hidden.
+
+### 5.3 Pages publishing (compile-time .xlsx)
+The .xlsx cannot be generated in the browser (openpyxl is Python), so the
+published site is compiled in CI and the two artifacts are deployed side by
+side:
+
+```
+site root: index.html (HTML report) + <stem>_BOM.xlsx  ← button target
+```
+
+- `scripts/build_pages.sh INPUT [CONFIG] [OUTDIR]` — the single build step,
+  shared verbatim by both CI configs so GitHub/GitLab can't drift.
+- `.github/workflows/pages.yml` — GitHub Actions: test → build `_site/` →
+  `upload-pages-artifact` → `deploy-pages` (OIDC; Settings → Pages source
+  must be "GitHub Actions").
+- `.gitlab-ci.yml` — GitLab CI: `pages` job publishing `public/`
+  (auto-deployed by job-name convention), default branch only.
+- Published input selected by `BOM_INPUT` / `BOM_CONFIG` variables in each
+  CI file (defaults: the NCC-1701 example).
+
+Step-by-step service setup: `PAGES_SETUP.md`.
 
 ---
 
@@ -279,8 +310,9 @@ in an HTML footer note.
 
 ```
 bomgen.py INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
-                    [--both] [-o OUTDIR] [--quiet]
+                    [--both] [--xlsx-url URL] [-o OUTDIR] [--quiet]
 ```
+`--xlsx-url` overrides the HTML download-button target (§5.2, D5).
 Single-file script (matches team tooling style, cf. dellkit.py); stdlib +
 `openpyxl` only (`tomllib` is stdlib ≥3.11). Exit 0 clean, 1 validation
 error, 2 usage error.
@@ -308,3 +340,4 @@ error, 2 usage error.
 | D2 | 2026-07-12 | Root row absent from export; synthesize Level-0 from config metadata. |
 | D3 | 2026-07-12 | Dash number from `Rev` for now; flagged as open item O1. |
 | D4 | 2026-07-12 | XML export-rule ingest added (`read_xml`); XML = automation path (fires on workflow transition), CSV = interactive path. Schema verification = O2. |
+| D5 | 2026-07-13 | HTML gets a Download Excel button; .xlsx compiled in CI and deployed **next to** index.html on GitHub/GitLab Pages, so the button is a relative href (host-agnostic, both services, no runtime detection). `--xlsx-url` overrides; button self-removes when no target is known. |
