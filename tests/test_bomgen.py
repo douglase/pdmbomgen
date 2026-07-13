@@ -184,3 +184,36 @@ def test_cli_xlsx_url_override(tmp_path):
     assert rc == 0
     page = (tmp_path / "o.html").read_text(encoding="utf-8")
     assert 'href="https://example.com/bom.xlsx"' in page
+
+
+def test_source_rev_in_both_outputs(tmp_path):
+    """D8: --source-rev (e.g. the vault repo's git hash for the CSV) is
+    embedded in both outputs for provenance; omitted -> no trace of it."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings, source_rev="a1b2c3d")
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, source_rev="a1b2c3d")
+
+    page = h.read_text(encoding="utf-8")
+    assert "a1b2c3d" in page and "rev" in page
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    assert "a1b2c3d" in (ws["B8"].value or "")
+    assert ws["B6"].value == "Bill of Materials (BOM)"  # template rows intact
+
+    # omitted -> row 8 stays blank, no stray placeholder text in the HTML
+    h2 = tmp_path / "o2.html"
+    bomgen.write_html(root, cfg, "src.csv", h2, warnings)
+    assert "__SOURCE_REV__" not in h2.read_text(encoding="utf-8")
+    x2 = tmp_path / "o2.xlsx"
+    bomgen.write_excel(root, cfg, x2, warnings)
+    assert openpyxl.load_workbook(x2).active["B8"].value is None
+
+
+def test_cli_source_rev_flag(tmp_path):
+    rc = bomgen.main([str(SAMPLE_CSV), "--html", str(tmp_path / "o.html"),
+                      "--source-rev", "deadbee", "--quiet"])
+    assert rc == 0
+    assert "deadbee" in (tmp_path / "o.html").read_text(encoding="utf-8")

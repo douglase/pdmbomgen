@@ -16,7 +16,7 @@ stem=${stem%.*}
 mkdir -p "$outdir"
 # Same directory + same run => bomgen links the .xlsx from the HTML's
 # download button automatically (relative href, works on any host).
-python bomgen.py "$input" -c "$config" \
+python -m bomgen "$input" -c "$config" \
     --html "$outdir/index.html" \
     --xlsx "$outdir/${stem}_BOM.xlsx"
 

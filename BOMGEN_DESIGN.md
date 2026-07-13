@@ -204,6 +204,9 @@ config overrides:
 - **Data-quality banner** (§7, D6): when warnings exist, a yellow wrapped
   block merged over rows 2–5 (blank in the template, so the title block and
   header rows never move) lists them.
+- **Source revision** *(D8)*: when `--source-rev` is given, row 8 (a blank
+  spacer between the title line and the project box — never referenced
+  elsewhere) gets "Source revision: {value}" in small non-bold text.
 
 ### 5.2 HTML (`html_out`)
 One self-contained file, zero external requests (CSS+JS inlined, data embedded
@@ -231,6 +234,10 @@ Features (all vanilla JS, ~300 lines):
   service detection. The self-contained-file guarantee is unchanged — the
   page makes no request unless the button is clicked, and a downloaded
   HTML sans .xlsx simply drops the button.
+- **Source revision** *(D8)*: when `--source-rev` is given, the header's
+  generation line gets a " · rev `{value}`" suffix; empty when omitted.
+  bomgen treats the value as opaque text — no git dependency in bomgen
+  itself — so it works with any VCS or provenance scheme a caller wants.
 - Print stylesheet: tree fully expanded, controls hidden.
 
 ### 5.3 Pages publishing (compile-time .xlsx)
@@ -320,13 +327,56 @@ the generator's stderr. No warnings → no banner.
 ## 8. CLI
 
 ```
-bomgen.py INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
-                    [--both] [--xlsx-url URL] [-o OUTDIR] [--quiet]
+bomgen INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
+                 [--both] [--xlsx-url URL] [--source-rev REV]
+                 [-o OUTDIR] [--quiet]
 ```
 `--xlsx-url` overrides the HTML download-button target (§5.2, D5).
-Single-file script (matches team tooling style, cf. dellkit.py); stdlib +
-`openpyxl` only (`tomllib` is stdlib ≥3.11). Exit 0 clean, 1 validation
-error, 2 usage error.
+`--source-rev` embeds an opaque provenance string in both outputs (§5.1,
+§5.2, D8) — typically the input file's last git commit hash, computed by
+the caller (bomgen has no VCS dependency itself).
+
+Single-module implementation (`bomgen/__init__.py`, matching the original
+single-file philosophy — one file of logic, no internal package split);
+stdlib + `openpyxl` only (`tomllib` is stdlib ≥3.11). Packaged for
+installation via `pyproject.toml` at the repo root (D7) — `pip install
+bomgen` gives a `bomgen` console script and `python -m bomgen` both; a
+clone still works dependency-free by running `python -m bomgen` from the
+repo root without installing. Exit 0 clean, 1 validation error, 2 usage
+error.
+
+## 8.1 Packaging & downstream vault repos (D7, D8)
+
+bomgen's own repo holds no real BOM data — the CSV/XML export belongs to
+whoever owns the vault, in their own repo. That repo needs three things
+this repo doesn't provide by itself:
+
+1. **pdmbomgen installed as a dependency, not vendored** — so a fix merged
+   upstream reaches every downstream repo without anyone copy-pasting a
+   new script version.
+2. **The exported CSV/XML under version control**, so changes to the BOM
+   are auditable.
+3. **A compiled report that says which commit of the CSV it came from** —
+   the "is this report current?" question answered by the report itself.
+
+`template-repo/` in this repo is a copy-out starting point for that
+pattern:
+- `requirements.txt` pins `pdmbomgen @ git+https://github.com/douglase/
+  pdmbomgen.git@main` — **not** a tagged release. CI reinstalls it fresh
+  on every build, so a push to pdmbomgen's `main` is picked up by every
+  downstream repo's *next* build with zero action from that repo's owner.
+  (Trade-off: an upstream breaking change also reaches everyone
+  immediately; pin to a tag instead if that's a bigger risk than staleness
+  for your team.)
+- `scripts/build_pages.sh` computes `git log -1 --format=%h -- "$BOM_INPUT"`
+  **in the downstream repo's own history** (not pdmbomgen's) and passes it
+  as `--source-rev`, so the compiled report is stamped with the commit
+  that last touched the actual vault export.
+- A scheduled CI trigger (weekly, in addition to on-push) so repos whose
+  CSV rarely changes still periodically rebuild and pick up upstream
+  pdmbomgen fixes even without a commit of their own.
+
+See `template-repo/SETUP.md` for the bootstrap steps.
 
 ## 9. Testing
 - Golden-file test: sample CSV → compare parsed tree (paths, qty_total) to a
@@ -353,3 +403,5 @@ error, 2 usage error.
 | D4 | 2026-07-12 | XML export-rule ingest added (`read_xml`); XML = automation path (fires on workflow transition), CSV = interactive path. Schema verification = O2. |
 | D5 | 2026-07-13 | HTML gets a Download Excel button; .xlsx compiled in CI and deployed **next to** index.html on GitHub/GitLab Pages, so the button is a relative href (host-agnostic, both services, no runtime detection). `--xlsx-url` overrides; button self-removes when no target is known. |
 | D6 | 2026-07-13 | Warnings promoted from HTML footer note to a yellow data-quality banner at the top of **both** outputs (Excel rows 2–5, HTML below header); new V7 check flags unresolved `SW-*@` property expressions (e.g. `SW-Mass@.SLDPRT`). |
+| D7 | 2026-07-13 | Packaged as an installable module: `bomgen.py` moved to `bomgen/__init__.py` + `bomgen/template.html` (package data) + `bomgen/__main__.py`, with `pyproject.toml` at repo root providing a `bomgen` console-script entry point. Still one file of logic (`__init__.py`); the split is packaging-only, not an architecture change. Lets downstream vault repos `pip install` straight from this repo instead of vendoring the script (§8.1). |
+| D8 | 2026-07-13 | `--source-rev` CLI flag: opaque provenance string (typically a git commit hash, computed by the caller — bomgen stays VCS-agnostic) embedded in both outputs, so a compiled report says which commit of the source CSV/XML it reflects. Backs the `template-repo/` vault-repo pattern (§8.1). |

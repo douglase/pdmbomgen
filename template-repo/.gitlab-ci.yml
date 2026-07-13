@@ -1,0 +1,31 @@
+# Publish this vault's BOM (HTML + downloadable .xlsx) to GitLab Pages.
+# GitLab Pages convention: a job named `pages` that emits a `public/`
+# artifact is deployed automatically — no further configuration needed.
+#
+# Also set up a scheduled Pipeline (Build > Pipeline schedules, e.g.
+# weekly) — GitLab schedules aren't expressed in this YAML file, they're a
+# project setting. The schedule matters here: it rebuilds even when nobody
+# has touched BOM_INPUT recently, so a fix merged into pdmbomgen's main
+# branch (pulled fresh via requirements.txt) still reaches this site
+# without anyone having to remember to re-run it. See ../SETUP.md.
+
+variables:
+  GIT_DEPTH: "0"   # full history: needed so `git log -- INPUT` finds its real last commit
+
+pages:
+  image: python:3.12-slim
+  variables:
+    # Which BOM this repo publishes. Point at your real PDM export once
+    # you've replaced vault/PLACEHOLDER_pdmout.csv. Can also be overridden
+    # per-project in Settings > CI/CD > Variables.
+    BOM_INPUT: vault/PLACEHOLDER_pdmout.csv
+    BOM_CONFIG: bomgen.toml
+  script:
+    - pip install -r requirements.txt
+    - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

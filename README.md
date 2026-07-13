@@ -14,20 +14,33 @@ Configurable for any PDM vault via `bomgen.toml`.
 
 ## Quick start
 
+Installed straight from GitHub (no PyPI package yet — this is how
+downstream "vault" repos consume it too, see below):
+
 ```bash
-pip install openpyxl pytest      # openpyxl is the only runtime dependency
-python bomgen.py examples/NCC-1701_pdmout.csv --both
+pip install "pdmbomgen @ git+https://github.com/douglase/pdmbomgen.git@main"
+bomgen examples/NCC-1701_pdmout.csv --both
 # -> NCC-1701_pdmout_BOM.xlsx, NCC-1701_pdmout_BOM.html
 ```
 
-Requires Python ≥ 3.11 (stdlib `tomllib`).
+Working from a clone instead, without installing:
+
+```bash
+pip install openpyxl
+python -m bomgen examples/NCC-1701_pdmout.csv --both
+```
+
+Requires Python ≥ 3.11 (stdlib `tomllib`). openpyxl is the only runtime
+dependency.
 
 ## Usage
 
 ```
-python bomgen.py INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
-                                 [--both] [--xlsx-url URL] [-o OUTDIR] [--quiet]
+bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
+                       [--both] [--xlsx-url URL] [--source-rev REV]
+                       [-o OUTDIR] [--quiet]
 ```
+(`python -m bomgen ...` works identically from a clone.)
 
 - **CSV** — the interactive path: PDM BOM tab → export. Tip: do **not**
   round-trip the file through Excel; Excel float-mangles two-segment item
@@ -68,6 +81,15 @@ Both call `scripts/build_pages.sh` and publish the example BOM by default —
 point `BOM_INPUT`/`BOM_CONFIG` in the CI file at your own export.
 **Step-by-step setup for both services: [`PAGES_SETUP.md`](PAGES_SETUP.md).**
 
+## Vault repos (real BOM data, tracking upstream fixes)
+
+This repo is the tool; your PDM export doesn't belong in it. For a repo
+that version-controls **your** vault's CSV/XML export, installs pdmbomgen
+fresh on every build (so fixes merged here reach it automatically), and
+stamps the compiled report with the git hash of the export's last commit,
+copy **[`template-repo/`](template-repo/)** into a new repo — see
+[`template-repo/SETUP.md`](template-repo/SETUP.md).
+
 ## Design & decisions
 
 `BOMGEN_DESIGN.md` is the living design document: input format findings
@@ -92,4 +114,6 @@ change.
 - `examples/NCC-1701_pdmout.csv` is a sanitized (Star Trek-themed) copy of a
   real PDM export — structure, sparsity, and defects (including the Excel
   float-mangled `2.10` item) are preserved verbatim from the original.
-- `template.html` must sit next to `bomgen.py` (it's read at runtime).
+- `bomgen/` is the installable package (`pyproject.toml` at repo root);
+  `bomgen/template.html` ships as package data and is read at runtime next
+  to the installed module, so no manual co-location is needed.

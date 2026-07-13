@@ -13,7 +13,7 @@ pages:
     BOM_INPUT: examples/NCC-1701_pdmout.csv
     BOM_CONFIG: bomgen.toml
   script:
-    - pip install openpyxl pytest
+    - pip install ".[test]"
     - python -m pytest tests/ -q
     - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
   artifacts:

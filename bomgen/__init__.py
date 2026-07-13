@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """bomgen — SolidWorks PDM Professional CSV BOM -> human-readable Excel + HTML.
 
-See BOMGEN_DESIGN.md. Single-file by design; deps: openpyxl (+ stdlib tomllib).
+See BOMGEN_DESIGN.md. Single-module by design; deps: openpyxl (+ stdlib
+tomllib). Installable (pyproject.toml at repo root) so downstream "vault"
+repos can `pip install` it straight from this repo instead of vendoring
+the file — see template-repo/ for the pattern (design decision D7).
 """
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover (py<3.11)
     tomllib = None
+
+__version__ = "0.1.0"
 
 # --------------------------------------------------------------------------- config
 
@@ -353,7 +358,7 @@ def banner_lines(warnings: list[str]) -> list[str]:
 
 
 def write_excel(root: BomNode, cfg: dict, out: Path,
-                warnings: list[str] | None = None) -> None:
+                warnings: list[str] | None = None, source_rev: str = "") -> None:
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -410,6 +415,10 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
 
     put(6, "Bill of Materials (BOM)", 18)
     put(7, proj["title_line"])
+    if source_rev:
+        # row 8 is a blank spacer in the template; safe to use for
+        # provenance without disturbing the documented title-block rows
+        put(8, f"Source revision: {source_rev}", size=10, bold=False)
     put(9, proj["project_box"])
     put(10, f"System Name: {proj['system_name']}")
     put(11, f"Assembly Name {proj['assembly_number']}")
@@ -472,11 +481,17 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
 # --------------------------------------------------------------------------- html
 
 def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
-               warnings: list[str], xlsx_href: str = "") -> None:
+               warnings: list[str], xlsx_href: str = "",
+               source_rev: str = "") -> None:
     """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
     download button is removed client-side). When publishing to GitHub or
     GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
-    works on both (see PAGES_SETUP.md)."""
+    works on both (see PAGES_SETUP.md).
+
+    source_rev: opaque provenance string (e.g. the input CSV's last git
+    commit hash in the repo that owns it) rendered next to the source
+    filename. bomgen itself has no git dependency — callers compute this
+    (see template-repo/scripts/build_pages.sh) and pass it in verbatim."""
     proj = cfg["project"]
     passthrough = list(cfg["columns"].get("passthrough", []))
     nodes = preorder(root)
@@ -508,6 +523,8 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                 " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
             .replace("__SOURCE__", html.escape(src_name))
+            .replace("__SOURCE_REV__",
+                     f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
             .replace("__WARNBOX__", warnbox))
     out.write_text(page, encoding="utf-8")
@@ -526,6 +543,10 @@ def main(argv=None) -> int:
                     help="href for the HTML download button (default: the "
                          ".xlsx filename when both outputs land in the same "
                          "directory, as on a Pages deploy; omitted otherwise)")
+    ap.add_argument("--source-rev", default="", metavar="REV",
+                    help="opaque provenance string embedded in both reports "
+                         "(e.g. the input file's last git commit hash: "
+                         "$(git log -1 --format=%%h -- INPUT)); blank if omitted")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -553,7 +574,7 @@ def main(argv=None) -> int:
     xlsx_out: Path | None = None
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
-        write_excel(root, cfg, xlsx_out, warnings)
+        write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev)
         did = True
         if not a.quiet:
             print(f"wrote {xlsx_out}")
@@ -566,7 +587,8 @@ def main(argv=None) -> int:
             same_dir = (xlsx_out is not None
                         and xlsx_out.resolve().parent == p.resolve().parent)
             href = xlsx_out.name if same_dir else ""
-        write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href)
+        write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
+                  source_rev=a.source_rev)
         did = True
         if not a.quiet:
             print(f"wrote {p}")

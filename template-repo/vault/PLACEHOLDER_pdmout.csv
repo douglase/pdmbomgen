@@ -1,0 +1,4 @@
+Level,Qty,Number,Name,Description,Rev,COTS
+1,1,PLACEHOLDER-ASSY001.SLDASM,Placeholder Subassembly,Replace this file with your real PDM BOM export,,
+1.1,4,PLACEHOLDER-PART001.SLDPRT,Placeholder Part,Delete me once you drop in a real export,1,
+1.2,1,96246A088_Placeholder_Vendor_Part.SLDPRT,Placeholder Vendor Part,Example of a COTS/vendor row,,X

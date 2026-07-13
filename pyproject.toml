@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdmbomgen"
+version = "0.1.0"
+description = "SolidWorks PDM Professional BOM exports -> human-readable Excel + HTML reports"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = ["openpyxl"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+bomgen = "bomgen:main"
+
+[project.urls]
+Repository = "https://github.com/douglase/pdmbomgen"
+
+[tool.setuptools]
+packages = ["bomgen"]
+
+[tool.setuptools.package-data]
+bomgen = ["template.html"]
