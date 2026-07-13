@@ -25,10 +25,12 @@ td.pn{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-
 .tw{white-space:nowrap}
 .tg{display:inline-block;width:1.1em;cursor:pointer;user-select:none;color:var(--accent)}
 .badge{display:inline-block;padding:0 6px;border-radius:9px;background:#dbe8f4;color:var(--accent);font-size:11px;font-weight:600}
+#warnbox{margin:10px 22px;padding:10px 14px;background:var(--hit);border:1px solid #e3b341;border-left:5px solid #b98900;border-radius:6px;color:#6b4a00;font-size:13px}
+#warnbox ul{margin:6px 0 0;padding-left:20px}
+#warnbox li{margin:2px 0}
 .path{color:var(--muted);font-size:11px}
 .state{color:var(--muted);font-size:11.5px}
 footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
-.warn{color:#8a5a00}
 @media print{#controls{display:none}tr{display:table-row!important}body{background:#fff}}
 </style>
 </head>
@@ -38,6 +40,7 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
   <div class="meta">__TITLE__ · __SYSTEM__ · __CONTACT__</div>
   <div class="meta">Generated __GENERATED__ from <code>__SOURCE__</code> by bomgen</div>
 </header>
+__WARNBOX__
 <div id="controls">
   <input id="q" type="search" placeholder="Filter parts… (part number, name, description)">
   <button data-x="all">Expand all</button>
@@ -51,8 +54,7 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
   <th>Item</th><th>Part Number</th><th>Part Name</th><th>Description</th>
   <th>COTS</th><th>Qty</th><th>Qty Total</th><th>State</th>
 </tr></thead><tbody id="tb"></tbody></table>
-<footer>Static snapshot — regenerate from PDM for current data.
-<span class="warn" id="warns"></span></footer>
+<footer>Static snapshot — regenerate from PDM for current data.</footer>
 <script>
 const DATA = /*__DATA__*/;
 const rows = DATA.rows, byPath = {};
@@ -127,7 +129,6 @@ document.getElementById("copy").onclick = () => {
     lines.push([...tr.cells].map(c => c.innerText.replace(/[▾▸]\s*/, "").trim()).join("\t"));
   navigator.clipboard.writeText(lines.join("\n"));
 };
-const W = "__WARNINGS__"; if (W) document.getElementById("warns").textContent = " · Parser warnings: " + W;
 // download button only renders when bomgen knew where the .xlsx lives
 const dl = document.getElementById("dl"); if (!dl.getAttribute("href")) dl.remove();
 render();

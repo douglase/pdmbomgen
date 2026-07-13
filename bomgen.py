@@ -178,10 +178,34 @@ def read_xml(path: Path, cfg: dict, warnings: list[str]) -> tuple[list[str], lis
     return header, rows
 
 
+# unresolved SolidWorks property expression, e.g. 'SW-Mass@.SLDPRT': the
+# data-card variable is linked to a model property but the evaluated value
+# was never cached (file not rebuilt/saved) — the cell is not a number.
+SW_PROP_RE = re.compile(r"^SW-\w+@")
+
+
+def scan_unresolved_props(rows: list[dict], warnings: list[str]) -> None:
+    """V7: flag cells that export the raw SW property expression instead of
+    its evaluated value. Grouped per column so the banner stays short."""
+    hits: dict[str, tuple[int, str]] = {}
+    for r in rows:
+        for k, v in r.items():
+            v = (v or "").strip() if isinstance(v, str) else ""
+            if SW_PROP_RE.match(v):
+                n, ex = hits.get(k, (0, v))
+                hits[k] = (n + 1, ex)
+    for k, (n, ex) in sorted(hits.items()):
+        warnings.append(
+            f"V7: column '{k}': {n} row(s) hold an unresolved SolidWorks "
+            f"property expression (e.g. '{ex}'), not a value — rebuild and "
+            "save those files in CAD so PDM exports the evaluated number")
+
+
 def build_tree(header: list[str], rows: list[dict], cfg: dict,
                warnings: list[str]) -> BomNode:
     col = cfg["columns"]
     errors: list[str] = []
+    scan_unresolved_props(rows, warnings)
 
     # V5 required columns
     for key in ("level", "qty", "number"):
@@ -318,9 +342,20 @@ def preorder(root: BomNode) -> list[BomNode]:
 
 # --------------------------------------------------------------------------- excel
 
-def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
+BANNER_MAX = 8  # warnings shown in the data-quality banner before "+N more"
+
+
+def banner_lines(warnings: list[str]) -> list[str]:
+    shown = warnings[:BANNER_MAX]
+    if len(warnings) > BANNER_MAX:
+        shown.append(f"…and {len(warnings) - BANNER_MAX} more (see generator stderr)")
+    return shown
+
+
+def write_excel(root: BomNode, cfg: dict, out: Path,
+                warnings: list[str] | None = None) -> None:
     import openpyxl
-    from openpyxl.styles import Alignment, Border, Font, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     proj, colcfg, rules = cfg["project"], cfg["columns"], cfg["rules"]
@@ -345,6 +380,27 @@ def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
     headers = ["Level", "Abbreviated Part Number", "Part Name", "Description",
                "COTS", "Qty (Assembly)", "Qty (Total)"] + passthrough
     total_cols = n_mark + len(headers)
+
+    # ---- data-quality banner (rows 2-5 are blank in the template, so the
+    # banner never shifts the title block / header rows the team knows)
+    if warnings:
+        lines = ["⚠ DATA QUALITY WARNINGS — verify before use:"] + [
+            f"• {w}" for w in banner_lines(warnings)]
+        yellow = PatternFill("solid", fgColor="FFF3C4")
+        edge = Side(style="thin", color="B98900")
+        box = Border(left=edge, right=edge, top=edge, bottom=edge)
+        for row in range(2, 6):
+            for i in range(total_cols):
+                cell = ws[f"{L(i)}{row}"]
+                cell.fill, cell.border = yellow, box
+        c = ws["B2"]
+        c.value = "\n".join(lines)
+        c.font = Font(name=fontname, size=11, bold=False, color="7A4E00")
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells(f"B2:{L(total_cols - 1)}5")
+        est = sum(len(l) // 160 + 1 for l in lines)  # rough wrap estimate
+        for row in range(2, 6):
+            ws.row_dimensions[row].height = max(15, est * 15 / 4 + 2)
 
     # ---- title block
     def put(row, text, size=14, bold=True):
@@ -433,6 +489,14 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
         "extra": [(n.raw.get(p) or "").strip() for p in passthrough],
     } for n in nodes]
 
+    if warnings:
+        items = "".join(f"<li>{html.escape(w)}</li>"
+                        for w in banner_lines(warnings))
+        warnbox = ('<div id="warnbox"><strong>&#9888; Data quality warnings '
+                   f"— verify before use:</strong><ul>{items}</ul></div>")
+    else:
+        warnbox = ""
+
     tmpl = Path(__file__).with_name("template.html").read_text(encoding="utf-8")
     page = (tmpl
             .replace("/*__DATA__*/", json.dumps(
@@ -445,7 +509,7 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
             .replace("__SOURCE__", html.escape(src_name))
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
-            .replace("__WARNINGS__", html.escape("; ".join(warnings)) if warnings else ""))
+            .replace("__WARNBOX__", warnbox))
     out.write_text(page, encoding="utf-8")
 
 
@@ -489,7 +553,7 @@ def main(argv=None) -> int:
     xlsx_out: Path | None = None
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
-        write_excel(root, cfg, xlsx_out)
+        write_excel(root, cfg, xlsx_out, warnings)
         did = True
         if not a.quiet:
             print(f"wrote {xlsx_out}")

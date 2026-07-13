@@ -33,6 +33,10 @@ python bomgen.py INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
   round-trip the file through Excel; Excel float-mangles two-segment item
   numbers ("2.10" → "2.1"). bomgen detects and repairs the unambiguous
   cases with a warning (rule R1).
+- **Data-quality banner** — caught gotchas (Excel float-mangle repairs,
+  unresolved `SW-Mass@…` property expressions, missing COTS column, …)
+  print to stderr *and* render in a yellow warning box at the top of both
+  reports, so readers of the published BOM see them too.
 - **XML** — the automation path: a PDM export rule fires on a workflow
   transition (e.g., release) and drops an XML for bomgen to consume.
   ⚠ The XML parser is written against SOLIDWORKS' documented schema family

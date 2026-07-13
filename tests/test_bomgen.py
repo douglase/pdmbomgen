@@ -109,6 +109,52 @@ def test_outputs_write(tmp_path):
     assert "Qty (Total)" in row17
 
 
+def test_unresolved_swprop_warning():
+    """V7: SW-Mass@.SLDPRT-style cells are flagged, grouped per column."""
+    _, warnings = parse(SAMPLE_CSV)
+    v7 = [w for w in warnings if w.startswith("V7")]
+    assert len(v7) == 1 and "'Mass'" in v7[0] and "SW-Mass@" in v7[0]
+    assert "4 row(s)" in v7[0]
+
+
+def test_warning_banner_in_both_outputs(tmp_path):
+    """D6: caught gotchas render in a yellow banner atop Excel and HTML."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    assert any(w.startswith("R1") for w in warnings)  # float-mangle caught
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+
+    page = h.read_text(encoding="utf-8")
+    assert 'id="warnbox"' in page
+    assert "SW-Mass@" in page and "R1" in page  # both gotchas surfaced
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    banner = ws["B2"].value
+    assert banner and "DATA QUALITY" in banner
+    assert "SW-Mass@" in banner and "R1" in banner
+    assert ws["B6"].value == "Bill of Materials (BOM)"  # template rows intact
+
+
+def test_no_banner_on_clean_input(tmp_path):
+    """No warnings -> no banner in either output."""
+    clean = tmp_path / "clean.csv"
+    clean.write_text("Level,Qty,Number,COTS\n"
+                     "1,1,NCC-FA002.SLDASM,\n"
+                     "1.1,2,NCC-FP001.SLDPRT,X\n", encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(clean, cfg)
+    assert warnings == []
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "clean.csv", h, warnings)
+    assert 'id="warnbox"' not in h.read_text(encoding="utf-8")
+    import openpyxl
+    assert openpyxl.load_workbook(x).active["B2"].value is None
+
+
 def test_html_xlsx_download_link(tmp_path):
     """D5: explicit xlsx_href lands in the download button, escaped."""
     cfg = bomgen.load_config(None)

@@ -201,6 +201,9 @@ config overrides:
   set `sheet_properties.outlinePr.summaryBelow = False` so the parent row
   sits above its group.
 - No formulas (report is a static snapshot); therefore no recalc step needed.
+- **Data-quality banner** (§7, D6): when warnings exist, a yellow wrapped
+  block merged over rows 2–5 (blank in the template, so the title block and
+  header rows never move) lists them.
 
 ### 5.2 HTML (`html_out`)
 One self-contained file, zero external requests (CSS+JS inlined, data embedded
@@ -213,6 +216,9 @@ Features (all vanilla JS, ~300 lines):
 - Controls: *Expand all*, *Collapse all*, *Level 1/2/3…* depth buttons,
   live text filter (matches any visible column; ancestors of matches stay
   visible), **Copy TSV** (visible rows → clipboard, pasteable into Excel).
+- **Data-quality banner** (§7, D6): yellow box between header and controls
+  listing caught warnings; injected server-side (`__WARNBOX__`), absent
+  when there are none. Replaces the former footer warning note.
 - Columns: Level path, Part Number, Part Name, Description, COTS badge,
   Qty, Qty Total, State, + passthrough. Column set driven by the same config.
 - **Download Excel button** *(Decision D5, 2026-07-13)*: an `<a download>`
@@ -299,10 +305,15 @@ Config lookup order: `--config PATH` → `./bomgen.toml` → built-in defaults.
 | V4 | Qty parses as positive int | warning (defaults 1) |
 | V5 | required mapped columns present in header | error (except `cots`: warning) |
 | V6 | depth jumps >1 relative to previous row | warning (dotted paths make this legal but it usually signals a truncated export) |
+| V7 | cell holds an unresolved SolidWorks property expression (`SW-*@…`, e.g. `SW-Mass@.SLDPRT`) instead of an evaluated value — the file was never rebuilt/saved after the property was linked | warning, grouped per column with a count (fix in CAD, not in bomgen) |
 | R1 | duplicate dotted path repaired by re-appending zeros ("2.1"→"2.10") iff result equals next expected sibling — recovers Excel float-mangling of two-segment item numbers | warning (export direct from PDM to avoid entirely) |
 
-Errors abort before writing outputs; warnings print to stderr and are listed
-in an HTML footer note.
+Errors abort before writing outputs. Warnings print to stderr **and render
+as a yellow data-quality banner at the top of both outputs** *(Decision D6,
+2026-07-13)* — first 8 warnings, then a "+N more" line — so a reader of the
+published report sees caught gotchas (R1 float-mangling, V7 unresolved
+SW properties, missing COTS column, O2 XML caveats, …) without access to
+the generator's stderr. No warnings → no banner.
 
 ---
 
@@ -341,3 +352,4 @@ error, 2 usage error.
 | D3 | 2026-07-12 | Dash number from `Rev` for now; flagged as open item O1. |
 | D4 | 2026-07-12 | XML export-rule ingest added (`read_xml`); XML = automation path (fires on workflow transition), CSV = interactive path. Schema verification = O2. |
 | D5 | 2026-07-13 | HTML gets a Download Excel button; .xlsx compiled in CI and deployed **next to** index.html on GitHub/GitLab Pages, so the button is a relative href (host-agnostic, both services, no runtime detection). `--xlsx-url` overrides; button self-removes when no target is known. |
+| D6 | 2026-07-13 | Warnings promoted from HTML footer note to a yellow data-quality banner at the top of **both** outputs (Excel rows 2–5, HTML below header); new V7 check flags unresolved `SW-*@` property expressions (e.g. `SW-Mass@.SLDPRT`). |
