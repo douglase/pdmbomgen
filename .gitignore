@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# local Pages build output (CI builds these fresh)
+_site/
+public/
+# local pip build artifacts
+build/
+*.egg-info/

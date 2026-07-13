@@ -1,0 +1,7 @@
+# Track pdmbomgen's main branch, not a pinned version — CI reinstalls this
+# fresh on every build (see scripts/build_pages.sh), so a fix merged
+# upstream reaches this repo's *next* Pages build automatically, with no
+# action needed here. See ../BOMGEN_DESIGN.md §8.1 for the trade-off
+# (an upstream breaking change also arrives immediately); pin to a tag
+# (@vX.Y.Z) instead if that risk matters more than staleness for you.
+pdmbomgen @ git+https://github.com/douglase/pdmbomgen.git@main

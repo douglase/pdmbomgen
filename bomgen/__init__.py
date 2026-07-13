@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """bomgen — SolidWorks PDM Professional CSV BOM -> human-readable Excel + HTML.
 
-See BOMGEN_DESIGN.md. Single-file by design; deps: openpyxl (+ stdlib tomllib).
+See BOMGEN_DESIGN.md. Single-module by design; deps: openpyxl (+ stdlib
+tomllib). Installable (pyproject.toml at repo root) so downstream "vault"
+repos can `pip install` it straight from this repo instead of vendoring
+the file — see template-repo/ for the pattern (design decision D7).
 """
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover (py<3.11)
     tomllib = None
+
+__version__ = "0.1.0"
 
 # --------------------------------------------------------------------------- config
 
@@ -178,10 +183,34 @@ def read_xml(path: Path, cfg: dict, warnings: list[str]) -> tuple[list[str], lis
     return header, rows
 
 
+# unresolved SolidWorks property expression, e.g. 'SW-Mass@.SLDPRT': the
+# data-card variable is linked to a model property but the evaluated value
+# was never cached (file not rebuilt/saved) — the cell is not a number.
+SW_PROP_RE = re.compile(r"^SW-\w+@")
+
+
+def scan_unresolved_props(rows: list[dict], warnings: list[str]) -> None:
+    """V7: flag cells that export the raw SW property expression instead of
+    its evaluated value. Grouped per column so the banner stays short."""
+    hits: dict[str, tuple[int, str]] = {}
+    for r in rows:
+        for k, v in r.items():
+            v = (v or "").strip() if isinstance(v, str) else ""
+            if SW_PROP_RE.match(v):
+                n, ex = hits.get(k, (0, v))
+                hits[k] = (n + 1, ex)
+    for k, (n, ex) in sorted(hits.items()):
+        warnings.append(
+            f"V7: column '{k}': {n} row(s) hold an unresolved SolidWorks "
+            f"property expression (e.g. '{ex}'), not a value — rebuild and "
+            "save those files in CAD so PDM exports the evaluated number")
+
+
 def build_tree(header: list[str], rows: list[dict], cfg: dict,
                warnings: list[str]) -> BomNode:
     col = cfg["columns"]
     errors: list[str] = []
+    scan_unresolved_props(rows, warnings)
 
     # V5 required columns
     for key in ("level", "qty", "number"):
@@ -318,9 +347,20 @@ def preorder(root: BomNode) -> list[BomNode]:
 
 # --------------------------------------------------------------------------- excel
 
-def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
+BANNER_MAX = 8  # warnings shown in the data-quality banner before "+N more"
+
+
+def banner_lines(warnings: list[str]) -> list[str]:
+    shown = warnings[:BANNER_MAX]
+    if len(warnings) > BANNER_MAX:
+        shown.append(f"…and {len(warnings) - BANNER_MAX} more (see generator stderr)")
+    return shown
+
+
+def write_excel(root: BomNode, cfg: dict, out: Path,
+                warnings: list[str] | None = None, source_rev: str = "") -> None:
     import openpyxl
-    from openpyxl.styles import Alignment, Border, Font, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     proj, colcfg, rules = cfg["project"], cfg["columns"], cfg["rules"]
@@ -346,6 +386,27 @@ def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
                "COTS", "Qty (Assembly)", "Qty (Total)"] + passthrough
     total_cols = n_mark + len(headers)
 
+    # ---- data-quality banner (rows 2-5 are blank in the template, so the
+    # banner never shifts the title block / header rows the team knows)
+    if warnings:
+        lines = ["⚠ DATA QUALITY WARNINGS — verify before use:"] + [
+            f"• {w}" for w in banner_lines(warnings)]
+        yellow = PatternFill("solid", fgColor="FFF3C4")
+        edge = Side(style="thin", color="B98900")
+        box = Border(left=edge, right=edge, top=edge, bottom=edge)
+        for row in range(2, 6):
+            for i in range(total_cols):
+                cell = ws[f"{L(i)}{row}"]
+                cell.fill, cell.border = yellow, box
+        c = ws["B2"]
+        c.value = "\n".join(lines)
+        c.font = Font(name=fontname, size=11, bold=False, color="7A4E00")
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells(f"B2:{L(total_cols - 1)}5")
+        est = sum(len(l) // 160 + 1 for l in lines)  # rough wrap estimate
+        for row in range(2, 6):
+            ws.row_dimensions[row].height = max(15, est * 15 / 4 + 2)
+
     # ---- title block
     def put(row, text, size=14, bold=True):
         c = ws[f"B{row}"]
@@ -354,6 +415,10 @@ def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
 
     put(6, "Bill of Materials (BOM)", 18)
     put(7, proj["title_line"])
+    if source_rev:
+        # row 8 is a blank spacer in the template; safe to use for
+        # provenance without disturbing the documented title-block rows
+        put(8, f"Source revision: {source_rev}", size=10, bold=False)
     put(9, proj["project_box"])
     put(10, f"System Name: {proj['system_name']}")
     put(11, f"Assembly Name {proj['assembly_number']}")
@@ -416,7 +481,17 @@ def write_excel(root: BomNode, cfg: dict, out: Path) -> None:
 # --------------------------------------------------------------------------- html
 
 def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
-               warnings: list[str]) -> None:
+               warnings: list[str], xlsx_href: str = "",
+               source_rev: str = "") -> None:
+    """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
+    download button is removed client-side). When publishing to GitHub or
+    GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
+    works on both (see PAGES_SETUP.md).
+
+    source_rev: opaque provenance string (e.g. the input CSV's last git
+    commit hash in the repo that owns it) rendered next to the source
+    filename. bomgen itself has no git dependency — callers compute this
+    (see template-repo/scripts/build_pages.sh) and pass it in verbatim."""
     proj = cfg["project"]
     passthrough = list(cfg["columns"].get("passthrough", []))
     nodes = preorder(root)
@@ -429,6 +504,14 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
         "extra": [(n.raw.get(p) or "").strip() for p in passthrough],
     } for n in nodes]
 
+    if warnings:
+        items = "".join(f"<li>{html.escape(w)}</li>"
+                        for w in banner_lines(warnings))
+        warnbox = ('<div id="warnbox"><strong>&#9888; Data quality warnings '
+                   f"— verify before use:</strong><ul>{items}</ul></div>")
+    else:
+        warnbox = ""
+
     tmpl = Path(__file__).with_name("template.html").read_text(encoding="utf-8")
     page = (tmpl
             .replace("/*__DATA__*/", json.dumps(
@@ -440,7 +523,10 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                 " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
             .replace("__SOURCE__", html.escape(src_name))
-            .replace("__WARNINGS__", html.escape("; ".join(warnings)) if warnings else ""))
+            .replace("__SOURCE_REV__",
+                     f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
+            .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
+            .replace("__WARNBOX__", warnbox))
     out.write_text(page, encoding="utf-8")
 
 
@@ -453,6 +539,14 @@ def main(argv=None) -> int:
     ap.add_argument("--xlsx", type=Path, nargs="?", const=True, default=None)
     ap.add_argument("--html", type=Path, nargs="?", const=True, default=None)
     ap.add_argument("--both", action="store_true")
+    ap.add_argument("--xlsx-url", default=None, metavar="URL",
+                    help="href for the HTML download button (default: the "
+                         ".xlsx filename when both outputs land in the same "
+                         "directory, as on a Pages deploy; omitted otherwise)")
+    ap.add_argument("--source-rev", default="", metavar="REV",
+                    help="opaque provenance string embedded in both reports "
+                         "(e.g. the input file's last git commit hash: "
+                         "$(git log -1 --format=%%h -- INPUT)); blank if omitted")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -477,15 +571,24 @@ def main(argv=None) -> int:
     a.outdir.mkdir(parents=True, exist_ok=True)
     stem = a.input.stem
     did = False
+    xlsx_out: Path | None = None
     if a.xlsx or a.both:
-        p = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
-        write_excel(root, cfg, p)
+        xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
+        write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev)
         did = True
         if not a.quiet:
-            print(f"wrote {p}")
+            print(f"wrote {xlsx_out}")
     if a.html or a.both:
         p = a.html if isinstance(a.html, Path) else a.outdir / f"{stem}_BOM.html"
-        write_html(root, cfg, a.input.name, p, warnings)
+        href = a.xlsx_url
+        if href is None:
+            # sibling .xlsx from the same run -> relative link survives any
+            # hosting root (GitHub Pages, GitLab Pages, file://, S3, ...)
+            same_dir = (xlsx_out is not None
+                        and xlsx_out.resolve().parent == p.resolve().parent)
+            href = xlsx_out.name if same_dir else ""
+        write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
+                  source_rev=a.source_rev)
         did = True
         if not a.quiet:
             print(f"wrote {p}")

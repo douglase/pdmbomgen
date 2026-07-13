@@ -107,3 +107,113 @@ def test_outputs_write(tmp_path):
     assert ws["B16"].value == "Assembly Level"
     row17 = [c.value for c in ws[17] if c.value is not None]
     assert "Qty (Total)" in row17
+
+
+def test_unresolved_swprop_warning():
+    """V7: SW-Mass@.SLDPRT-style cells are flagged, grouped per column."""
+    _, warnings = parse(SAMPLE_CSV)
+    v7 = [w for w in warnings if w.startswith("V7")]
+    assert len(v7) == 1 and "'Mass'" in v7[0] and "SW-Mass@" in v7[0]
+    assert "4 row(s)" in v7[0]
+
+
+def test_warning_banner_in_both_outputs(tmp_path):
+    """D6: caught gotchas render in a yellow banner atop Excel and HTML."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    assert any(w.startswith("R1") for w in warnings)  # float-mangle caught
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+
+    page = h.read_text(encoding="utf-8")
+    assert 'id="warnbox"' in page
+    assert "SW-Mass@" in page and "R1" in page  # both gotchas surfaced
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    banner = ws["B2"].value
+    assert banner and "DATA QUALITY" in banner
+    assert "SW-Mass@" in banner and "R1" in banner
+    assert ws["B6"].value == "Bill of Materials (BOM)"  # template rows intact
+
+
+def test_no_banner_on_clean_input(tmp_path):
+    """No warnings -> no banner in either output."""
+    clean = tmp_path / "clean.csv"
+    clean.write_text("Level,Qty,Number,COTS\n"
+                     "1,1,NCC-FA002.SLDASM,\n"
+                     "1.1,2,NCC-FP001.SLDPRT,X\n", encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(clean, cfg)
+    assert warnings == []
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "clean.csv", h, warnings)
+    assert 'id="warnbox"' not in h.read_text(encoding="utf-8")
+    import openpyxl
+    assert openpyxl.load_workbook(x).active["B2"].value is None
+
+
+def test_html_xlsx_download_link(tmp_path):
+    """D5: explicit xlsx_href lands in the download button, escaped."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, xlsx_href="o.xlsx")
+    page = h.read_text(encoding="utf-8")
+    assert 'id="dl"' in page and 'href="o.xlsx"' in page
+    # no href known -> empty attribute (button removes itself client-side)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+    assert 'href=""' in h.read_text(encoding="utf-8")
+
+
+def test_cli_both_links_sibling_xlsx(tmp_path):
+    """--both into one directory -> button links the .xlsx by filename,
+    the layout scripts/build_pages.sh deploys to GitHub/GitLab Pages."""
+    rc = bomgen.main([str(SAMPLE_CSV), "--both", "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "NCC-1701_pdmout_BOM.html").read_text(encoding="utf-8")
+    assert 'href="NCC-1701_pdmout_BOM.xlsx"' in page
+    assert (tmp_path / "NCC-1701_pdmout_BOM.xlsx").exists()
+
+
+def test_cli_xlsx_url_override(tmp_path):
+    rc = bomgen.main([str(SAMPLE_CSV), "--html", str(tmp_path / "o.html"),
+                      "--xlsx-url", "https://example.com/bom.xlsx", "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "o.html").read_text(encoding="utf-8")
+    assert 'href="https://example.com/bom.xlsx"' in page
+
+
+def test_source_rev_in_both_outputs(tmp_path):
+    """D8: --source-rev (e.g. the vault repo's git hash for the CSV) is
+    embedded in both outputs for provenance; omitted -> no trace of it."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings, source_rev="a1b2c3d")
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, source_rev="a1b2c3d")
+
+    page = h.read_text(encoding="utf-8")
+    assert "a1b2c3d" in page and "rev" in page
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    assert "a1b2c3d" in (ws["B8"].value or "")
+    assert ws["B6"].value == "Bill of Materials (BOM)"  # template rows intact
+
+    # omitted -> row 8 stays blank, no stray placeholder text in the HTML
+    h2 = tmp_path / "o2.html"
+    bomgen.write_html(root, cfg, "src.csv", h2, warnings)
+    assert "__SOURCE_REV__" not in h2.read_text(encoding="utf-8")
+    x2 = tmp_path / "o2.xlsx"
+    bomgen.write_excel(root, cfg, x2, warnings)
+    assert openpyxl.load_workbook(x2).active["B8"].value is None
+
+
+def test_cli_source_rev_flag(tmp_path):
+    rc = bomgen.main([str(SAMPLE_CSV), "--html", str(tmp_path / "o.html"),
+                      "--source-rev", "deadbee", "--quiet"])
+    assert rc == 0
+    assert "deadbee" in (tmp_path / "o.html").read_text(encoding="utf-8")

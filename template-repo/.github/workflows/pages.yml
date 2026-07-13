@@ -1,0 +1,57 @@
+# Publish this vault's BOM (HTML + downloadable .xlsx) to GitHub Pages.
+# Runs on every push to the default branch, on demand, AND on a weekly
+# schedule — the schedule matters here: it rebuilds even if nobody has
+# touched BOM_INPUT recently, so a fix merged into pdmbomgen's main branch
+# (pulled fresh via requirements.txt) still reaches this site without
+# anyone having to remember to re-run it. See ../SETUP.md.
+name: Publish BOM to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 1"   # every Monday 06:00 UTC — picks up upstream pdmbomgen fixes
+
+# Which BOM this repo publishes. Point at your real PDM export once you've
+# replaced vault/PLACEHOLDER_pdmout.csv.
+env:
+  BOM_INPUT: vault/PLACEHOLDER_pdmout.csv
+  BOM_CONFIG: bomgen.toml
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history: needed so `git log -- INPUT` finds its real last commit
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install pdmbomgen (tracks upstream main — see requirements.txt)
+        run: pip install -r requirements.txt
+      - name: Build site (index.html + .xlsx, stamped with the CSV's commit)
+        run: bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" _site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

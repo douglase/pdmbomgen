@@ -1,0 +1,23 @@
+# Publish the BOM (HTML + downloadable .xlsx) to GitLab Pages on every push
+# to the default branch. Setup steps: see PAGES_SETUP.md §GitLab.
+#
+# GitLab Pages convention: a job named `pages` that emits a `public/`
+# artifact is deployed automatically — no further configuration needed.
+
+pages:
+  image: python:3.12-slim
+  variables:
+    # Which BOM to publish. Point BOM_INPUT at your own PDM export (checked
+    # into the repo) and BOM_CONFIG at its bomgen.toml. Both can also be
+    # overridden per-project in Settings > CI/CD > Variables.
+    BOM_INPUT: examples/NCC-1701_pdmout.csv
+    BOM_CONFIG: bomgen.toml
+  script:
+    - pip install ".[test]"
+    - python -m pytest tests/ -q
+    - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

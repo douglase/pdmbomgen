@@ -1,0 +1,35 @@
+# bomgen configuration for this vault repo — see BOMGEN_DESIGN.md §6 in
+# https://github.com/douglase/pdmbomgen for the full field reference.
+# Edit every value below to match your project once you've dropped in your
+# real PDM export.
+
+[project]
+title_line   = "BOM DRAFT"
+project_box  = "PROJECT NAME AND TITLE BOX"
+system_name  = ""
+assembly_number      = "TOP-LEVEL-00"       # synthesized Level-0 root
+assembly_name        = "Top Level Assembly"
+assembly_description = ""
+contact_name = ""
+contact_info = ""
+
+[columns]
+level       = "Level"
+qty         = "Qty"
+number      = "Number"
+name        = "Name"
+config      = "Config"
+rev         = "Rev"
+description = "Description"
+found_in    = "Found In"
+cots        = "COTS"
+passthrough = []                             # e.g. ["Material", "Mass"]
+
+[rules]
+part_number_pattern = '^([A-Za-z]+-[A-Za-z]{2}\d+)'
+dash_source = "rev"
+min_marker_columns = 5
+state_from_found_in = true
+
+[output]
+excel_font = "Aptos Narrow"

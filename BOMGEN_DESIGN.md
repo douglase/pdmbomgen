@@ -201,6 +201,12 @@ config overrides:
   set `sheet_properties.outlinePr.summaryBelow = False` so the parent row
   sits above its group.
 - No formulas (report is a static snapshot); therefore no recalc step needed.
+- **Data-quality banner** (§7, D6): when warnings exist, a yellow wrapped
+  block merged over rows 2–5 (blank in the template, so the title block and
+  header rows never move) lists them.
+- **Source revision** *(D8)*: when `--source-rev` is given, row 8 (a blank
+  spacer between the title line and the project box — never referenced
+  elsewhere) gets "Source revision: {value}" in small non-bold text.
 
 ### 5.2 HTML (`html_out`)
 One self-contained file, zero external requests (CSS+JS inlined, data embedded
@@ -213,9 +219,47 @@ Features (all vanilla JS, ~300 lines):
 - Controls: *Expand all*, *Collapse all*, *Level 1/2/3…* depth buttons,
   live text filter (matches any visible column; ancestors of matches stay
   visible), **Copy TSV** (visible rows → clipboard, pasteable into Excel).
+- **Data-quality banner** (§7, D6): yellow box between header and controls
+  listing caught warnings; injected server-side (`__WARNBOX__`), absent
+  when there are none. Replaces the former footer warning note.
 - Columns: Level path, Part Number, Part Name, Description, COTS badge,
   Qty, Qty Total, State, + passthrough. Column set driven by the same config.
+- **Download Excel button** *(Decision D5, 2026-07-13)*: an `<a download>`
+  in the controls bar pointing at the report's .xlsx twin. The href is
+  injected at generation time (`__XLSX_HREF__`): `--xlsx-url` if given,
+  else the .xlsx **filename** when the same run writes both outputs into
+  the same directory, else empty — and an empty href removes the button
+  client-side. A relative href is deliberately host-agnostic: it works on
+  GitHub Pages, GitLab Pages, `file://`, and plain file shares, with no
+  service detection. The self-contained-file guarantee is unchanged — the
+  page makes no request unless the button is clicked, and a downloaded
+  HTML sans .xlsx simply drops the button.
+- **Source revision** *(D8)*: when `--source-rev` is given, the header's
+  generation line gets a " · rev `{value}`" suffix; empty when omitted.
+  bomgen treats the value as opaque text — no git dependency in bomgen
+  itself — so it works with any VCS or provenance scheme a caller wants.
 - Print stylesheet: tree fully expanded, controls hidden.
+
+### 5.3 Pages publishing (compile-time .xlsx)
+The .xlsx cannot be generated in the browser (openpyxl is Python), so the
+published site is compiled in CI and the two artifacts are deployed side by
+side:
+
+```
+site root: index.html (HTML report) + <stem>_BOM.xlsx  ← button target
+```
+
+- `scripts/build_pages.sh INPUT [CONFIG] [OUTDIR]` — the single build step,
+  shared verbatim by both CI configs so GitHub/GitLab can't drift.
+- `.github/workflows/pages.yml` — GitHub Actions: test → build `_site/` →
+  `upload-pages-artifact` → `deploy-pages` (OIDC; Settings → Pages source
+  must be "GitHub Actions").
+- `.gitlab-ci.yml` — GitLab CI: `pages` job publishing `public/`
+  (auto-deployed by job-name convention), default branch only.
+- Published input selected by `BOM_INPUT` / `BOM_CONFIG` variables in each
+  CI file (defaults: the NCC-1701 example).
+
+Step-by-step service setup: `PAGES_SETUP.md`.
 
 ---
 
@@ -268,22 +312,71 @@ Config lookup order: `--config PATH` → `./bomgen.toml` → built-in defaults.
 | V4 | Qty parses as positive int | warning (defaults 1) |
 | V5 | required mapped columns present in header | error (except `cots`: warning) |
 | V6 | depth jumps >1 relative to previous row | warning (dotted paths make this legal but it usually signals a truncated export) |
+| V7 | cell holds an unresolved SolidWorks property expression (`SW-*@…`, e.g. `SW-Mass@.SLDPRT`) instead of an evaluated value — the file was never rebuilt/saved after the property was linked | warning, grouped per column with a count (fix in CAD, not in bomgen) |
 | R1 | duplicate dotted path repaired by re-appending zeros ("2.1"→"2.10") iff result equals next expected sibling — recovers Excel float-mangling of two-segment item numbers | warning (export direct from PDM to avoid entirely) |
 
-Errors abort before writing outputs; warnings print to stderr and are listed
-in an HTML footer note.
+Errors abort before writing outputs. Warnings print to stderr **and render
+as a yellow data-quality banner at the top of both outputs** *(Decision D6,
+2026-07-13)* — first 8 warnings, then a "+N more" line — so a reader of the
+published report sees caught gotchas (R1 float-mangling, V7 unresolved
+SW properties, missing COTS column, O2 XML caveats, …) without access to
+the generator's stderr. No warnings → no banner.
 
 ---
 
 ## 8. CLI
 
 ```
-bomgen.py INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
-                    [--both] [-o OUTDIR] [--quiet]
+bomgen INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
+                 [--both] [--xlsx-url URL] [--source-rev REV]
+                 [-o OUTDIR] [--quiet]
 ```
-Single-file script (matches team tooling style, cf. dellkit.py); stdlib +
-`openpyxl` only (`tomllib` is stdlib ≥3.11). Exit 0 clean, 1 validation
-error, 2 usage error.
+`--xlsx-url` overrides the HTML download-button target (§5.2, D5).
+`--source-rev` embeds an opaque provenance string in both outputs (§5.1,
+§5.2, D8) — typically the input file's last git commit hash, computed by
+the caller (bomgen has no VCS dependency itself).
+
+Single-module implementation (`bomgen/__init__.py`, matching the original
+single-file philosophy — one file of logic, no internal package split);
+stdlib + `openpyxl` only (`tomllib` is stdlib ≥3.11). Packaged for
+installation via `pyproject.toml` at the repo root (D7) — `pip install
+bomgen` gives a `bomgen` console script and `python -m bomgen` both; a
+clone still works dependency-free by running `python -m bomgen` from the
+repo root without installing. Exit 0 clean, 1 validation error, 2 usage
+error.
+
+## 8.1 Packaging & downstream vault repos (D7, D8)
+
+bomgen's own repo holds no real BOM data — the CSV/XML export belongs to
+whoever owns the vault, in their own repo. That repo needs three things
+this repo doesn't provide by itself:
+
+1. **pdmbomgen installed as a dependency, not vendored** — so a fix merged
+   upstream reaches every downstream repo without anyone copy-pasting a
+   new script version.
+2. **The exported CSV/XML under version control**, so changes to the BOM
+   are auditable.
+3. **A compiled report that says which commit of the CSV it came from** —
+   the "is this report current?" question answered by the report itself.
+
+`template-repo/` in this repo is a copy-out starting point for that
+pattern:
+- `requirements.txt` pins `pdmbomgen @ git+https://github.com/douglase/
+  pdmbomgen.git@main` — **not** a tagged release. CI reinstalls it fresh
+  on every build, so a push to pdmbomgen's `main` is picked up by every
+  downstream repo's *next* build with zero action from that repo's owner.
+  (Trade-off: an upstream breaking change also reaches everyone
+  immediately; pin to a tag instead if that's a bigger risk than staleness
+  for your team.)
+- `scripts/build_pages.sh` computes `git log -1 --format=%h -- "$BOM_INPUT"`
+  **in the downstream repo's own history** (not pdmbomgen's) and passes it
+  as `--source-rev`, so the compiled report is stamped with the commit
+  that last touched the actual vault export.
+- A scheduled CI trigger (weekly, in addition to on-push) so repos whose
+  CSV rarely changes still periodically rebuild and pick up upstream
+  pdmbomgen fixes even without a commit of their own.
+
+See `template-repo/SETUP.md` for the bootstrap steps.
 
 ## 9. Testing
 - Golden-file test: sample CSV → compare parsed tree (paths, qty_total) to a
@@ -308,3 +401,7 @@ error, 2 usage error.
 | D2 | 2026-07-12 | Root row absent from export; synthesize Level-0 from config metadata. |
 | D3 | 2026-07-12 | Dash number from `Rev` for now; flagged as open item O1. |
 | D4 | 2026-07-12 | XML export-rule ingest added (`read_xml`); XML = automation path (fires on workflow transition), CSV = interactive path. Schema verification = O2. |
+| D5 | 2026-07-13 | HTML gets a Download Excel button; .xlsx compiled in CI and deployed **next to** index.html on GitHub/GitLab Pages, so the button is a relative href (host-agnostic, both services, no runtime detection). `--xlsx-url` overrides; button self-removes when no target is known. |
+| D6 | 2026-07-13 | Warnings promoted from HTML footer note to a yellow data-quality banner at the top of **both** outputs (Excel rows 2–5, HTML below header); new V7 check flags unresolved `SW-*@` property expressions (e.g. `SW-Mass@.SLDPRT`). |
+| D7 | 2026-07-13 | Packaged as an installable module: `bomgen.py` moved to `bomgen/__init__.py` + `bomgen/template.html` (package data) + `bomgen/__main__.py`, with `pyproject.toml` at repo root providing a `bomgen` console-script entry point. Still one file of logic (`__init__.py`); the split is packaging-only, not an architecture change. Lets downstream vault repos `pip install` straight from this repo instead of vendoring the script (§8.1). |
+| D8 | 2026-07-13 | `--source-rev` CLI flag: opaque provenance string (typically a git commit hash, computed by the caller — bomgen stays VCS-agnostic) embedded in both outputs, so a compiled report says which commit of the source CSV/XML it reflects. Backs the `template-repo/` vault-repo pattern (§8.1). |
