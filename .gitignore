@@ -1,6 +1,5 @@
 __pycache__/
-*.py[cod]
+*.pyc
 .pytest_cache/
-# local Pages build output (CI builds these fresh)
 _site/
 public/
