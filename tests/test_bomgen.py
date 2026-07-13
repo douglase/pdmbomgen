@@ -1,0 +1,109 @@
+"""Tests for bomgen. Run: python -m pytest tests/ -v"""
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+import bomgen  # noqa: E402
+
+FIX = Path(__file__).parent / "fixtures"
+SAMPLE_CSV = REPO / "examples" / "NCC-1701_pdmout.csv"
+
+
+def parse(path, cfg=None):
+    cfg = cfg or bomgen.load_config(None)
+    warnings = []
+    if path.suffix == ".xml":
+        header, rows = bomgen.read_xml(path, cfg, warnings)
+    else:
+        header, rows = bomgen.read_csv(path)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    return root, warnings
+
+
+# ------------------------------------------------------------------ CSV path
+
+def test_csv_tree_shape():
+    root, _ = parse(SAMPLE_CSV)
+    nodes = bomgen.preorder(root)
+    assert len(nodes) == 49  # 48 rows + synthesized root
+    assert max(n.depth for n in nodes) == 4
+    idx = {n.path: n for n in nodes}
+    assert idx["0"].part_number  # synthesized root populated from config
+
+
+def test_excel_float_mangle_repair():
+    root, warnings = parse(SAMPLE_CSV)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    assert "2.10" in idx, "duplicate '2.1' should be repaired to '2.10'"
+    assert any(w.startswith("R1") for w in warnings)
+
+
+def test_qty_rollup_multiplies_ancestors():
+    root, _ = parse(SAMPLE_CSV)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    n = idx["3.1.12.2"]
+    assert n.qty == 1 and idx["3.1.12"].qty == 6 and n.qty_total == 6
+
+
+def test_rollup_invariant_leaf_sums():
+    root, _ = parse(SAMPLE_CSV)
+    total = sum(n.qty_total for n in bomgen.preorder(root) if not n.children)
+    root2, _ = parse(SAMPLE_CSV)
+    total2 = sum(n.qty_total for n in bomgen.preorder(root2) if not n.children)
+    assert total == total2 > 0
+
+
+def test_part_number_rev_dash():
+    root, _ = parse(SAMPLE_CSV)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    assert idx["1.1.1"].part_number == "NCC-FP005-02"  # Rev 2 -> -02 (D3/O1)
+
+
+def test_golden_paths(tmp_path):
+    """Snapshot of (path, qty_total) pairs; update deliberately if rules change."""
+    golden_file = FIX / "golden_tree.json"
+    root, _ = parse(SAMPLE_CSV)
+    actual = {n.path: n.qty_total for n in bomgen.preorder(root)}
+    if not golden_file.exists():  # first run generates it
+        golden_file.write_text(json.dumps(actual, indent=1, sort_keys=True))
+        pytest.skip("golden file created; re-run")
+    assert actual == json.loads(golden_file.read_text())
+
+
+# ------------------------------------------------------------------ XML path
+
+def test_xml_nested_references():
+    root, warnings = parse(FIX / "sample_export.xml")
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    # top doc -> "1"; its two references -> 1.1, 1.2; grandchildren -> 1.1.x
+    assert idx["1"].filename == "NCC-FA014.SLDASM"
+    assert idx["1.1.2"].qty == 2
+    assert idx["1.1.2"].qty_total == 2
+    assert idx["1.2"].qty == 4
+    assert idx["1.1.2"].cots == "X"          # COTS attr flows through (D1)
+    assert idx["1.1.1"].part_number == "NCC-FP005-02"
+    assert any("O2" in w for w in warnings)  # verification flag surfaces
+
+
+# ------------------------------------------------------------------ outputs
+
+def test_outputs_write(tmp_path):
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+    assert x.stat().st_size > 4000
+    page = h.read_text(encoding="utf-8")
+    assert "__TITLE__" not in page and '"2.10"' in page
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    assert ws["B16"].value == "Assembly Level"
+    row17 = [c.value for c in ws[17] if c.value is not None]
+    assert "Qty (Total)" in row17

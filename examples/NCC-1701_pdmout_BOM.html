@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NCC-FA001-00 — Bill of Materials</title>
+<style>
+:root{--line:#d8d4cc;--muted:#7a756b;--accent:#1a4d7c;--asm:#f3efe8;--hit:#fff3c4}
+*{box-sizing:border-box}
+body{font:14px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;margin:0;color:#22201c;background:#fbfaf7}
+header{padding:18px 22px 10px;border-bottom:2px solid var(--accent)}
+header h1{margin:0;font-size:20px}
+header .meta{color:var(--muted);font-size:12.5px;margin-top:4px}
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 22px;position:sticky;top:0;background:#fbfaf7;border-bottom:1px solid var(--line);z-index:2}
+#controls input{flex:1 1 220px;max-width:340px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+button{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:52px;background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em;z-index:1}
+tr.asm>td{background:var(--asm);font-weight:600}
+tr.hit>td{background:var(--hit)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.pn{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.tw{white-space:nowrap}
+.tg{display:inline-block;width:1.1em;cursor:pointer;user-select:none;color:var(--accent)}
+.badge{display:inline-block;padding:0 6px;border-radius:9px;background:#dbe8f4;color:var(--accent);font-size:11px;font-weight:600}
+.path{color:var(--muted);font-size:11px}
+.state{color:var(--muted);font-size:11.5px}
+footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
+.warn{color:#8a5a00}
+@media print{#controls{display:none}tr{display:table-row!important}body{background:#fff}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bill of Materials — NCC-FA001-00</h1>
+  <div class="meta">NCC-1701 BOM DRAFT, 7/12/26 · USS Enterprise Deflector Subsystem · Montgomery Scott · scotty@starfleet.example</div>
+  <div class="meta">Generated 2026-07-13 18:24 from <code>NCC-1701_pdmout.csv</code> by bomgen</div>
+</header>
+<div id="controls">
+  <input id="q" type="search" placeholder="Filter parts… (part number, name, description)">
+  <button data-x="all">Expand all</button>
+  <button data-x="none">Collapse all</button>
+  <span id="lvlbtns"></span>
+  <button id="copy">Copy TSV</button>
+  <span id="count" style="color:var(--muted);font-size:12px"></span>
+</div>
+<table id="t"><thead><tr id="hrow">
+  <th>Item</th><th>Part Number</th><th>Part Name</th><th>Description</th>
+  <th>COTS</th><th>Qty</th><th>Qty Total</th><th>State</th>
+</tr></thead><tbody id="tb"></tbody></table>
+<footer>Static snapshot — regenerate from PDM for current data.
+<span class="warn" id="warns"></span></footer>
+<script>
+const DATA = {"rows": [{"path": "0", "depth": 0, "pn": "NCC-FA001-00", "name": "Enterprise Deflector Final Assy (NCC-FA001.SLDASM)", "desc": "Final Deflector Top Level Assembly", "cots": "", "qty": 1, "qtyTotal": 1, "state": "", "asm": true, "extra": ["", ""]}, {"path": "1", "depth": 1, "pn": "NCC-FA014-00", "name": "1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil (NCC-FA014.SLDASM)", "desc": "1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": true, "extra": ["", ""]}, {"path": "1.1", "depth": 2, "pn": "NCC-FA004-00", "name": "Injector Mount Assembly Port No Coil (NCC-FA004.SLDASM)", "desc": "1in Cell Mounted Plasma Injector 5-DOF Mount Port No Coil", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": true, "extra": ["", ""]}, {"path": "1.1.1", "depth": 3, "pn": "NCC-FP005-02", "name": "Injector Base Port (NCC-FP005.SLDPRT)", "desc": "INJECTOR BASE, 1\" COIL", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "1.1.2", "depth": 3, "pn": "96246A088_Duranium Helical Insert_WRP", "name": "Duranium Helical Insert (96246A088_Duranium Helical Insert_WRP.SLDPRT)", "desc": "Duranium Helical Insert", "cots": "", "qty": 2, "qtyTotal": 2, "state": "NCC\\WIP", "asm": false, "extra": ["Nitronium 60 Duranium Alloy", ""]}, {"path": "1.1.3", "depth": 3, "pn": "90945A715_Tritanium Fleet Spec. Washer_WRP", "name": "Tritanium Fleet Spec. Washer (90945A715_Tritanium Fleet Spec. Washer_WRP.SLDPRT)", "desc": "Tritanium Fleet Spec. Washer", "cots": "", "qty": 2, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "1.1.4", "depth": 3, "pn": "92423A458_High-Strength Duranium Socket Head Screw_WRP", "name": "High-Strength Duranium Socket Head Screw (92423A458_High-Strength Duranium Socket Head Screw_WRP.SLDPRT)", "desc": "High-Strength Duranium Socket Head Screw", "cots": "", "qty": 2, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", ""]}, {"path": "1.1.5", "depth": 3, "pn": "Custom Injector Shim_WRP", "name": "Custom Injector Shim WRP (Custom Injector Shim_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "1.1.6", "depth": 3, "pn": "NCC-FP006-02", "name": "1in Injector Stage Port (NCC-FP006.SLDPRT)", "desc": "INJECTOR STAGE, 1\" COIL", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "1.1.7", "depth": 3, "pn": "90945A725_Tritanium Fleet Spec. Washer_WRP", "name": "Tritanium Fleet Spec. Washer (90945A725_Tritanium Fleet Spec. Washer_WRP.SLDPRT)", "desc": "Tritanium Fleet Spec. Washer", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "1.1.8", "depth": 3, "pn": "96246A046_Duranium Helical Insert_WRP", "name": "Duranium Helical Insert (96246A046_Duranium Helical Insert_WRP.SLDPRT)", "desc": "Duranium Helical Insert", "cots": "", "qty": 7, "qtyTotal": 7, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Nitronium 60 Duranium Alloy", ""]}, {"path": "1.1.9", "depth": 3, "pn": "NCC-FP007-00", "name": "Coil Glue Bond (NCC-FP007.SLDPRT)", "desc": "Sinlge 2216 bond for 1in coil.", "cots": "", "qty": 3, "qtyTotal": 3, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "1.1.10", "depth": 3, "pn": "NCC-FP004-B", "name": "1in Injector Radial Cell (NCC-FP004.SLDPRT)", "desc": "Radial Cell of Injector 3DOF or 5DOF Coil Mount", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["Tritanium-36 Plate", "0.064"]}, {"path": "1.1.11", "depth": 3, "pn": "92423A491_High-Strength Duranium Socket Head Screw_WRP", "name": "High-Strength Duranium Socket Head Screw (92423A491_High-Strength Duranium Socket Head Screw_WRP.SLDPRT)", "desc": "High-Strength Duranium Socket Head Screw", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", ""]}, {"path": "1.1.12", "depth": 3, "pn": "AK000007S_WRP", "name": "AK000007S WRP (AK000007S_WRP.SLDASM)", "desc": "", "cots": "", "qty": 6, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": true, "extra": ["", ""]}, {"path": "1.1.12.1", "depth": 4, "pn": "AK020004 EPS Tap Rev A_WRP", "name": "AK020004 EPS Tap Rev A WRP (AK020004 EPS Tap Rev A_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "1.1.12.2", "depth": 4, "pn": "HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP", "name": "Tritanium Socket Head Screw (HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP.SLDPRT)", "desc": "Tritanium Socket Head Screw", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "1.1.12.3", "depth": 4, "pn": "HD101004 EPS Tap Adjuster Rev B_WRP", "name": "HD101004 EPS Tap Adjuster Rev B WRP (HD101004 EPS Tap Adjuster Rev B_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "1.2", "depth": 2, "pn": "FM2_WRP", "name": "WRP-NCC-2219 (FM2_WRP.SLDPRT)", "desc": "FM2 FOR RCS", "cots": "", "qty": 1, "qtyTotal": 1, "state": "2000 - Mount Assemblies\\2200 - Emitters", "asm": false, "extra": ["", ""]}, {"path": "1.3", "depth": 2, "pn": "NCC-FP060-00", "name": "Emitter - Coil9A (NCC-FP060.SLDPRT)", "desc": "1k Coil9", "cots": "", "qty": 1, "qtyTotal": 1, "state": "Duotronic3.2.5.8 NCC22.0a\\Emitters Split Up", "asm": false, "extra": ["Transparent Aluminum", "0.01"]}, {"path": "2", "depth": 1, "pn": "NCC-FA019-00", "name": "Deflector Pinhole Blocker Assembly (NCC-FA019.SLDASM)", "desc": "Fail into beam blocker for secondary pinhole in deflector stop", "cots": "", "qty": 2, "qtyTotal": 2, "state": "NCC\\Flight", "asm": true, "extra": ["", ""]}, {"path": "2.1", "depth": 2, "pn": "deflectorActuatorFlag", "name": "deflectorActuatorFlag (deflectorActuatorFlag.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 2, "state": "NCC\\WIP", "asm": false, "extra": ["", ""]}, {"path": "2.2", "depth": 2, "pn": "92423A412_High-Strength Duranium Socket Head Screw_ENT", "name": "92423A412 High-Strength Duranium Socket Head Screw ENT (92423A412_High-Strength Duranium Socket Head Screw_ENT.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", "SW-Mass@.SLDPRT"]}, {"path": "2.3", "depth": 2, "pn": "96246A074_Duranium Helical Insert_ENT", "name": "96246A074 Duranium Helical Insert ENT (96246A074_Duranium Helical Insert_ENT.SLDPRT)", "desc": "", "cots": "", "qty": 2, "qtyTotal": 4, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Nitronium 60 Duranium Alloy", "SW-Mass@.SLDPRT"]}, {"path": "2.4", "depth": 2, "pn": "a1439solenoid", "name": "Deflector Shutter (a1439solenoid.SLDPRT)", "desc": "Modified COTS part a1320-1 shutter", "cots": "", "qty": 1, "qtyTotal": 2, "state": "NCC\\WIP", "asm": false, "extra": ["", "0.004179"]}, {"path": "2.5", "depth": 2, "pn": "92423A461_High-Strength Duranium Socket Head Screw", "name": "92423A461 High-Strength Duranium Socket Head Screw (92423A461_High-Strength Duranium Socket Head Screw.SLDPRT)", "desc": "", "cots": "", "qty": 3, "qtyTotal": 6, "state": "COTS\\Hardware", "asm": false, "extra": ["Duranium A286 Alloy", ""]}, {"path": "2.6", "depth": 2, "pn": "NCC-FP040-00", "name": "EPS Bracket (NCC-FP040.SLDPRT)", "desc": "Bracket for a1439 solenoid", "cots": "", "qty": 1, "qtyTotal": 2, "state": "NCC\\Flight", "asm": false, "extra": ["Tritanium-36 Plate", ""]}, {"path": "2.7", "depth": 2, "pn": "92423A451_High-Strength Duranium Socket Head Screw_ENT", "name": "92423A451 High-Strength Duranium Socket Head Screw ENT (92423A451_High-Strength Duranium Socket Head Screw_ENT.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", "SW-Mass@.SLDPRT"]}, {"path": "2.8", "depth": 2, "pn": "epsIsolator", "name": "epsIsolator (epsIsolator.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 2, "state": "NCC\\WIP", "asm": false, "extra": ["Castrodinium Epoxy Composite", "0"]}, {"path": "2.9", "depth": 2, "pn": "NCC-FP033-00", "name": "EPS Deflector Shutter (NCC-FP033.SLDPRT)", "desc": "Modified COTS part a1320-1_shutter", "cots": "", "qty": 1, "qtyTotal": 2, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "2.10", "depth": 2, "pn": "92423A462_High-Strength Duranium Socket Head Screw_ENT", "name": "92423A462 High-Strength Duranium Socket Head Screw ENT (92423A462_High-Strength Duranium Socket Head Screw_ENT.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", "SW-Mass@.SLDPRT"]}, {"path": "3", "depth": 1, "pn": "NCC-FA014-00", "name": "1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil (NCC-FA014.SLDASM)", "desc": "1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": true, "extra": ["", ""]}, {"path": "3.1", "depth": 2, "pn": "NCC-FA004-00", "name": "Injector Mount Assembly Port No Coil (NCC-FA004.SLDASM)", "desc": "1in Cell Mounted Plasma Injector 5-DOF Mount Port No Coil", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": true, "extra": ["", ""]}, {"path": "3.1.1", "depth": 3, "pn": "NCC-FP005-02", "name": "Injector Base Port (NCC-FP005.SLDPRT)", "desc": "INJECTOR BASE, 1\" COIL", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "3.1.2", "depth": 3, "pn": "96246A088_Duranium Helical Insert_WRP", "name": "Duranium Helical Insert (96246A088_Duranium Helical Insert_WRP.SLDPRT)", "desc": "Duranium Helical Insert", "cots": "", "qty": 2, "qtyTotal": 2, "state": "NCC\\WIP", "asm": false, "extra": ["Nitronium 60 Duranium Alloy", ""]}, {"path": "3.1.3", "depth": 3, "pn": "90945A715_Tritanium Fleet Spec. Washer_WRP", "name": "Tritanium Fleet Spec. Washer (90945A715_Tritanium Fleet Spec. Washer_WRP.SLDPRT)", "desc": "Tritanium Fleet Spec. Washer", "cots": "", "qty": 2, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "3.1.4", "depth": 3, "pn": "92423A458_High-Strength Duranium Socket Head Screw_WRP", "name": "High-Strength Duranium Socket Head Screw (92423A458_High-Strength Duranium Socket Head Screw_WRP.SLDPRT)", "desc": "High-Strength Duranium Socket Head Screw", "cots": "", "qty": 2, "qtyTotal": 2, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", ""]}, {"path": "3.1.5", "depth": 3, "pn": "Custom Injector Shim_WRP", "name": "Custom Injector Shim WRP (Custom Injector Shim_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "3.1.6", "depth": 3, "pn": "NCC-FP006-02", "name": "1in Injector Stage Port (NCC-FP006.SLDPRT)", "desc": "INJECTOR STAGE, 1\" COIL", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "3.1.7", "depth": 3, "pn": "90945A725_Tritanium Fleet Spec. Washer_WRP", "name": "Tritanium Fleet Spec. Washer (90945A725_Tritanium Fleet Spec. Washer_WRP.SLDPRT)", "desc": "Tritanium Fleet Spec. Washer", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "3.1.8", "depth": 3, "pn": "96246A046_Duranium Helical Insert_WRP", "name": "Duranium Helical Insert (96246A046_Duranium Helical Insert_WRP.SLDPRT)", "desc": "Duranium Helical Insert", "cots": "", "qty": 7, "qtyTotal": 7, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Nitronium 60 Duranium Alloy", ""]}, {"path": "3.1.9", "depth": 3, "pn": "NCC-FP007-00", "name": "Coil Glue Bond (NCC-FP007.SLDPRT)", "desc": "Sinlge 2216 bond for 1in coil.", "cots": "", "qty": 3, "qtyTotal": 3, "state": "NCC\\Flight", "asm": false, "extra": ["", ""]}, {"path": "3.1.10", "depth": 3, "pn": "NCC-FP004-B", "name": "1in Injector Radial Cell (NCC-FP004.SLDPRT)", "desc": "Radial Cell of Injector 3DOF or 5DOF Coil Mount", "cots": "", "qty": 1, "qtyTotal": 1, "state": "NCC\\Flight", "asm": false, "extra": ["Tritanium-36 Plate", "0.064"]}, {"path": "3.1.11", "depth": 3, "pn": "92423A491_High-Strength Duranium Socket Head Screw_WRP", "name": "High-Strength Duranium Socket Head Screw (92423A491_High-Strength Duranium Socket Head Screw_WRP.SLDPRT)", "desc": "High-Strength Duranium Socket Head Screw", "cots": "", "qty": 3, "qtyTotal": 3, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Duranium A286 Alloy", ""]}, {"path": "3.1.12", "depth": 3, "pn": "AK000007S_WRP", "name": "AK000007S WRP (AK000007S_WRP.SLDASM)", "desc": "", "cots": "", "qty": 6, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": true, "extra": ["", ""]}, {"path": "3.1.12.1", "depth": 4, "pn": "AK020004 EPS Tap Rev A_WRP", "name": "AK020004 EPS Tap Rev A WRP (AK020004 EPS Tap Rev A_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "3.1.12.2", "depth": 4, "pn": "HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP", "name": "Tritanium Socket Head Screw (HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP.SLDPRT)", "desc": "Tritanium Socket Head Screw", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["Tritanium 18-8", ""]}, {"path": "3.1.12.3", "depth": 4, "pn": "HD101004 EPS Tap Adjuster Rev B_WRP", "name": "HD101004 EPS Tap Adjuster Rev B WRP (HD101004 EPS Tap Adjuster Rev B_WRP.SLDPRT)", "desc": "", "cots": "", "qty": 1, "qtyTotal": 6, "state": "WIP\\9000 - Piece Parts", "asm": false, "extra": ["", ""]}, {"path": "3.2", "depth": 2, "pn": "NCC-FP053-00", "name": "Emitter - Coil2 (NCC-FP053.SLDPRT)", "desc": "Fore Coil2", "cots": "", "qty": 1, "qtyTotal": 1, "state": "Duotronic3.2.5.8 NCC22.0a\\Emitters Split Up", "asm": false, "extra": ["Transparent Aluminum", "0.01"]}], "extraCols": ["Material", "Mass"]};
+const rows = DATA.rows, byPath = {};
+rows.forEach(r => byPath[r.path] = r);
+const parentOf = p => p === "0" ? null : (p.includes(".") ? p.slice(0, p.lastIndexOf(".")) : "0");
+rows.forEach(r => { r.open = true; r.hasKids = rows.some(k => parentOf(k.path) === r.path); });
+
+// extra column headers
+const hrow = document.getElementById("hrow");
+DATA.extraCols.forEach(c => { const th = document.createElement("th"); th.textContent = c; hrow.appendChild(th); });
+
+const tb = document.getElementById("tb");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function render() {
+  tb.innerHTML = rows.map(r => {
+    const pad = 14 * r.depth;
+    const tg = r.hasKids ? `<span class="tg" data-p="${r.path}">${r.open ? "▾" : "▸"}</span>` : `<span class="tg"></span>`;
+    const extras = r.extra.map(v => `<td>${esc(v)}</td>`).join("");
+    return `<tr data-p="${r.path}" class="${r.asm ? "asm" : ""}">
+      <td class="tw" style="padding-left:${8 + pad}px">${tg}<span class="path">${r.path === "0" ? "TOP" : r.path}</span></td>
+      <td class="pn">${esc(r.pn)}</td><td>${esc(r.name)}</td><td>${esc(r.desc)}</td>
+      <td>${r.cots ? '<span class="badge">' + esc(r.cots) + "</span>" : ""}</td>
+      <td class="num">${r.qty}</td><td class="num">${r.qtyTotal}</td>
+      <td class="state">${esc(r.state)}</td>${extras}</tr>`;
+  }).join("");
+  applyVisibility();
+}
+function visible(r, q) {
+  // collapsed ancestor hides row
+  for (let p = parentOf(r.path); p; p = parentOf(p)) if (!byPath[p].open) return false;
+  return true;
+}
+const hay = r => [r.path, r.pn, r.name, r.desc, r.cots, r.state, ...r.extra].join(" ").toLowerCase();
+function applyVisibility() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const match = new Set();
+  if (q) rows.forEach(r => {
+    if (hay(r).includes(q)) { match.add(r.path);
+      for (let p = parentOf(r.path); p; p = parentOf(p)) match.add(p); }
+  });
+  let shown = 0;
+  for (const tr of tb.rows) {
+    const r = byPath[tr.dataset.p];
+    const ok = q ? match.has(r.path) : visible(r, q);
+    tr.style.display = ok ? "" : "none";
+    tr.classList.toggle("hit", !!q && hay(r).includes(q));
+    if (ok) shown++;
+  }
+  document.getElementById("count").textContent = `${shown}/${rows.length} rows`;
+}
+tb.addEventListener("click", e => {
+  const t = e.target.closest(".tg"); if (!t || !t.dataset.p) return;
+  const r = byPath[t.dataset.p]; r.open = !r.open;
+  t.textContent = r.open ? "▾" : "▸"; applyVisibility();
+});
+document.querySelectorAll("[data-x]").forEach(b => b.onclick = () => {
+  rows.forEach(r => r.open = b.dataset.x === "all"); render();
+});
+const maxD = Math.max(...rows.map(r => r.depth));
+const lb = document.getElementById("lvlbtns");
+for (let d = 1; d <= maxD; d++) {
+  const b = document.createElement("button"); b.textContent = "L" + d;
+  b.title = "Expand to level " + d;
+  b.onclick = () => { rows.forEach(r => r.open = r.depth < d); render(); };
+  lb.appendChild(b);
+}
+document.getElementById("q").addEventListener("input", applyVisibility);
+document.getElementById("copy").onclick = () => {
+  const head = [...hrow.cells].map(c => c.textContent);
+  const lines = [head.join("\t")];
+  for (const tr of tb.rows) if (tr.style.display !== "none")
+    lines.push([...tr.cells].map(c => c.innerText.replace(/[▾▸]\s*/, "").trim()).join("\t"));
+  navigator.clipboard.writeText(lines.join("\n"));
+};
+const W = "V5: COTS column &#x27;COTS&#x27; not in input; COTS will be blank (per design D1 — add the variable in PDM or edit the CSV); R1: row 31: duplicate path &#x27;2.1&#x27; reinterpreted as &#x27;2.10&#x27; (Excel float-mangling; export direct from PDM to avoid)"; if (W) document.getElementById("warns").textContent = " · Parser warnings: " + W;
+render();
+</script>
+</body>
+</html>

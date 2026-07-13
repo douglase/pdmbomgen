@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic fixture in the PDM export-rule schema family (transactions/
+     document/configuration/attribute). Structure per SOLIDWORKS PDM help
+     "XML File Structure and Example"; BOM nesting is the assumed form
+     pending verification against a real vault export (design O2). -->
+<xml>
+  <transactions>
+    <transaction date="1770000000" type="wf_export_document_attributes" vaultname="Starfleet vault">
+      <document aliasset="" pdmweid="1" idattribute="FileName" id="NCC-FA014.SLDASM" idcfgname="Default">
+        <configuration name="Default">
+          <attribute name="Description" value="1in Cell Mounted Plasma Injector 5-DOF Mount"/>
+          <attribute name="Rev" value="1"/>
+        </configuration>
+        <references>
+          <document id="NCC-FA004.SLDASM" quantity="1">
+            <configuration name="Default">
+              <attribute name="Description" value="Injector Mount Assembly"/>
+            </configuration>
+            <references>
+              <document id="NCC-FP005.SLDPRT" quantity="1">
+                <configuration name="Default">
+                  <attribute name="Description" value="INJECTOR BASE, 1&quot; COIL"/>
+                  <attribute name="Rev" value="2"/>
+                  <attribute name="COTS" value=""/>
+                </configuration>
+              </document>
+              <document id="96246A088_Duranium Helical Insert_WRP.SLDPRT" quantity="2">
+                <configuration name="96246A088">
+                  <attribute name="Description" value="Duranium Helical Insert"/>
+                  <attribute name="Material" value="Nitronium 60 Duranium Alloy"/>
+                  <attribute name="COTS" value="X"/>
+                </configuration>
+              </document>
+            </references>
+          </document>
+          <document id="NCC-FP033.SLDPRT" quantity="4">
+            <configuration name="Default">
+              <attribute name="Description" value="Spacer"/>
+            </configuration>
+          </document>
+        </references>
+      </document>
+    </transaction>
+  </transactions>
+</xml>

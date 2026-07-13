@@ -1,0 +1,49 @@
+﻿Level,Qty,Number,Name,Config,Rev,Description,Found In,Checked Out By,Material,Material Specification,Finish,Process Specification,ExportControlClassificationNumber,Collected Volatile Condesable Materials,Total Mass Loss,Water Vapor Regained,LowOperatingTemp,HighOperatingTemp,LowSurvTemp,HighSurvTemp,TRL,Datasheet Link,Mass
+1,1,NCC-FA014.SLDASM,,06 - Coil9A,,1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+1.1,1,  NCC-FA004.SLDASM,Injector Mount Assembly Port No Coil,Default,,1in Cell Mounted Plasma Injector 5-DOF Mount Port No Coil,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+1.1.1,1,    NCC-FP005.SLDPRT,Injector Base Port,Default,2,"INJECTOR BASE, 1"" COIL",D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+1.1.2,2,    96246A088_Duranium Helical Insert_WRP.SLDPRT,,96246A088,,Duranium Helical Insert,D:\Starfleet_PDM\SFC\ENT\NCC\WIP,,Nitronium 60 Duranium Alloy,,,,,,,,,,,,,,
+1.1.3,2,    90945A715_Tritanium Fleet Spec. Washer_WRP.SLDPRT,,90945A715,,Tritanium Fleet Spec. Washer,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+1.1.4,2,    92423A458_High-Strength Duranium Socket Head Screw_WRP.SLDPRT,,92423A458,,High-Strength Duranium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,
+1.1.5,3,    Custom Injector Shim_WRP.SLDPRT,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+1.1.6,1,    NCC-FP006.SLDPRT,1in Injector Stage Port,Default,2,"INJECTOR STAGE, 1"" COIL",D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+1.1.7,3,    90945A725_Tritanium Fleet Spec. Washer_WRP.SLDPRT,,90945A725,,Tritanium Fleet Spec. Washer,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+1.1.8,7,    96246A046_Duranium Helical Insert_WRP.SLDPRT,,96246A046,,Duranium Helical Insert,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Nitronium 60 Duranium Alloy,,,,,,,,,,,,,,
+1.1.9,3,    NCC-FP007.SLDPRT,Coil Glue Bond,Default,,Sinlge 2216 bond for 1in coil.,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+1.1.10,1,    NCC-FP004.SLDPRT,1in Injector Radial Cell,Default,B,Radial Cell of Injector 3DOF or 5DOF Coil Mount,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,Tritanium-36 Plate,ASTM B753,36 Grit Aluminum Oxide,ASTM B733,,,,,,,,,,,0.064
+1.1.11,3,    92423A491_High-Strength Duranium Socket Head Screw_WRP.SLDPRT,,92423A491,,High-Strength Duranium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,
+1.1.12,6,    AK000007S_WRP.SLDASM,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+1.1.12.1,1,      AK020004 EPS Tap Rev A_WRP.SLDPRT,,AK020004-4,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+1.1.12.2,1,      HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP.SLDPRT,,92196A108,,Tritanium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+1.1.12.3,1,      HD101004 EPS Tap Adjuster Rev B_WRP.SLDPRT,,HD101005,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+1.2,1,  FM2_WRP.SLDPRT,WRP-NCC-2219,Default,,FM2 FOR RCS,D:\Starfleet_PDM\SFC\ENT\NCC\2000 - Mount Assemblies\2200 - Emitters,,,,,,,,,,,,,,,,
+1.3,1,  NCC-FP060.SLDPRT,Emitter - Coil9A,Default,,1k Coil9,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\O - Emitter Imports\Duotronic3.2.5.8 NCC22.0a\Emitters Split Up,,Transparent Aluminum,,,,,,,,,,,,,,0.01
+2,2,NCC-FA019.SLDASM,Deflector Pinhole Blocker Assembly,Default,,Fail into beam blocker for secondary pinhole in deflector stop,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+2.1,1,  deflectorActuatorFlag.SLDPRT,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP,,,,,,,,,,,,,,,,
+2.2,1,  92423A412_High-Strength Duranium Socket Head Screw_ENT.SLDPRT,,92423A412,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,SW-Mass@.SLDPRT
+2.3,2,  96246A074_Duranium Helical Insert_ENT.SLDPRT,,96246A074,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Nitronium 60 Duranium Alloy,,,,,,,,,,,,,,SW-Mass@.SLDPRT
+2.4,1,  a1439solenoid.SLDPRT,Deflector Shutter,Modified with Flat,,Modified COTS part a1320-1 shutter,D:\Starfleet_PDM\SFC\ENT\NCC\WIP,,,,,,,,,,,,,,,,0.004179
+2.5,3,  92423A461_High-Strength Duranium Socket Head Screw.SLDPRT,,92423A461,,,D:\Starfleet_PDM\SFC\COM\COTS\Hardware,,Duranium A286 Alloy,,,,,,,,,,,,,,
+2.6,1,  NCC-FP040.SLDPRT,EPS Bracket,Default,,Bracket for a1439 solenoid,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,Tritanium-36 Plate,,36 Grit Aluminum Oxide,ASTM B733,,,,,,,,,,,
+2.7,1,  92423A451_High-Strength Duranium Socket Head Screw_ENT.SLDPRT,,92423A451,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,SW-Mass@.SLDPRT
+2.8,1,  epsIsolator.SLDPRT,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP,,Castrodinium Epoxy Composite,,,,,,,,,,,,,,0
+2.9,1,  NCC-FP033.SLDPRT,EPS Deflector Shutter,Default,,Modified COTS part a1320-1_shutter,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+2.1,1,  92423A462_High-Strength Duranium Socket Head Screw_ENT.SLDPRT,,92423A462,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,SW-Mass@.SLDPRT
+3,1,NCC-FA014.SLDASM,,02 - Coil2,,1in Cell Mounted Plasma Injector 5-DOF Mount Port With Coil,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+3.1,1,  NCC-FA004.SLDASM,Injector Mount Assembly Port No Coil,Default,,1in Cell Mounted Plasma Injector 5-DOF Mount Port No Coil,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+3.1.1,1,    NCC-FP005.SLDPRT,Injector Base Port,Default,2,"INJECTOR BASE, 1"" COIL",D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+3.1.2,2,    96246A088_Duranium Helical Insert_WRP.SLDPRT,,96246A088,,Duranium Helical Insert,D:\Starfleet_PDM\SFC\ENT\NCC\WIP,,Nitronium 60 Duranium Alloy,,,,,,,,,,,,,,
+3.1.3,2,    90945A715_Tritanium Fleet Spec. Washer_WRP.SLDPRT,,90945A715,,Tritanium Fleet Spec. Washer,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+3.1.4,2,    92423A458_High-Strength Duranium Socket Head Screw_WRP.SLDPRT,,92423A458,,High-Strength Duranium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,
+3.1.5,3,    Custom Injector Shim_WRP.SLDPRT,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+3.1.6,1,    NCC-FP006.SLDPRT,1in Injector Stage Port,Default,2,"INJECTOR STAGE, 1"" COIL",D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+3.1.7,3,    90945A725_Tritanium Fleet Spec. Washer_WRP.SLDPRT,,90945A725,,Tritanium Fleet Spec. Washer,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+3.1.8,7,    96246A046_Duranium Helical Insert_WRP.SLDPRT,,96246A046,,Duranium Helical Insert,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Nitronium 60 Duranium Alloy,,,,,,,,,,,,,,
+3.1.9,3,    NCC-FP007.SLDPRT,Coil Glue Bond,Default,,Sinlge 2216 bond for 1in coil.,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,,,,,,,,,,,,,,,
+3.1.10,1,    NCC-FP004.SLDPRT,1in Injector Radial Cell,Default,B,Radial Cell of Injector 3DOF or 5DOF Coil Mount,D:\Starfleet_PDM\SFC\ENT\NCC\Flight,,Tritanium-36 Plate,ASTM B753,36 Grit Aluminum Oxide,ASTM B733,,,,,,,,,,,0.064
+3.1.11,3,    92423A491_High-Strength Duranium Socket Head Screw_WRP.SLDPRT,,92423A491,,High-Strength Duranium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Duranium A286 Alloy,,,,,,,,,,,,,,
+3.1.12,6,    AK000007S_WRP.SLDASM,,Default,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+3.1.12.1,1,      AK020004 EPS Tap Rev A_WRP.SLDPRT,,AK020004-4,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+3.1.12.2,1,      HD301004 SBS 92196A108_Tritanium Socket Head Screw_WRP.SLDPRT,,92196A108,,Tritanium Socket Head Screw,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,Tritanium 18-8,,,,,,,,,,,,,,
+3.1.12.3,1,      HD101004 EPS Tap Adjuster Rev B_WRP.SLDPRT,,HD101005,,,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\9000 - Piece Parts,,,,,,,,,,,,,,,,
+3.2,1,  NCC-FP053.SLDPRT,Emitter - Coil2,Default,,Fore Coil2,D:\Starfleet_PDM\SFC\ENT\NCC\WIP\O - Emitter Imports\Duotronic3.2.5.8 NCC22.0a\Emitters Split Up,,Transparent Aluminum,,,,,,,,,,,,,,0.01

@@ -1,0 +1,32 @@
+# bomgen configuration — USS Enterprise Deflector Subsystem (see BOMGEN_DESIGN.md §6)
+
+[project]
+title_line   = "NCC-1701 BOM DRAFT, 7/12/26"
+project_box  = "PROJECT NAME AND TITLE BOX"
+system_name  = "USS Enterprise Deflector Subsystem"
+assembly_number      = "NCC-FA001-00"        # synthesized Level-0 root (D2)
+assembly_name        = "Enterprise Deflector Final Assy (NCC-FA001.SLDASM)"
+assembly_description = "Final Deflector Top Level Assembly"
+contact_name = "Montgomery Scott"
+contact_info = "scotty@starfleet.example"
+
+[columns]
+level       = "Level"
+qty         = "Qty"
+number      = "Number"
+name        = "Name"
+config      = "Config"
+rev         = "Rev"
+description = "Description"
+found_in    = "Found In"
+cots        = "COTS"          # D1: no heuristic; team adds PDM variable
+passthrough = ["Material", "Mass"]
+
+[rules]
+part_number_pattern = '^([A-Za-z]+-[A-Za-z]{2}\d+)'
+dash_source = "rev"           # O1: revisit dash-number source
+min_marker_columns = 5
+state_from_found_in = true
+
+[output]
+excel_font = "Aptos Narrow"
