@@ -90,6 +90,11 @@ stamps the compiled report with the git hash of the export's last commit,
 copy **[`template-repo/`](template-repo/)** into a new repo — see
 [`template-repo/SETUP.md`](template-repo/SETUP.md).
 
+⚠ That install is a plain `git clone` of **this** repo, so it only works
+anonymously if this repo is **public**. If it's private, either flip it to
+public (recommended — it's just the tool, no vault data lives here) or
+give downstream CI a token; see `template-repo/SETUP.md` §4.5 either way.
+
 ## Design & decisions
 
 `BOMGEN_DESIGN.md` is the living design document: input format findings

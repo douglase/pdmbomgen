@@ -38,6 +38,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Configure access to private pdmbomgen (no-op if public)
+        # The default GITHUB_TOKEN can't read a *different* private repo.
+        # If pdmbomgen stays private, add a repo secret PDMBOMGEN_PAT (a
+        # GitHub PAT with read-only access to it: Settings > Secrets and
+        # variables > Actions). Unset -> this step does nothing and plain
+        # anonymous clone is used, which is all a public pdmbomgen needs.
+        # See ../SETUP.md.
+        env:
+          PDMBOMGEN_PAT: ${{ secrets.PDMBOMGEN_PAT }}
+        run: |
+          if [ -n "$PDMBOMGEN_PAT" ]; then
+            git config --global url."https://oauth2:${PDMBOMGEN_PAT}@github.com/".insteadOf "https://github.com/"
+          fi
       - name: Install pdmbomgen (tracks upstream main — see requirements.txt)
         run: pip install -r requirements.txt
       - name: Build site (index.html + .xlsx, stamped with the CSV's commit)

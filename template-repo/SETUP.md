@@ -54,6 +54,31 @@ variables:                    # GitLab
   BOM_INPUT: vault/your_export.csv
 ```
 
+## 4.5 If pdmbomgen (the tool repo) is private
+
+`requirements.txt` installs pdmbomgen via anonymous `git clone`. That only
+works if `douglase/pdmbomgen` is **public** — an anonymous clone of a
+private repo fails in CI with `could not read Username for
+'https://github.com'` (no TTY to prompt for credentials).
+
+Two ways to fix it, pick one:
+
+- **Make pdmbomgen public** (simplest, no CI config needed): it's just the
+  tool — code, docs, a sanitized example CSV — not anyone's real vault
+  data, which stays wherever *this* repo is hosted and can stay private
+  independently. On github.com: **Settings → General → Danger Zone →
+  Change visibility → Public**.
+- **Keep it private, authenticate CI**: both CI configs already support
+  this, no-op if unused.
+  - **GitLab**: create a GitHub PAT with read-only access to pdmbomgen,
+    add it as a masked/protected CI/CD variable named `PDMBOMGEN_TOKEN`
+    (**Settings → CI/CD → Variables**).
+  - **GitHub**: same PAT, added as a repo secret named `PDMBOMGEN_PAT`
+    (**Settings → Secrets and variables → Actions → New repository
+    secret**).
+  - Rotate the PAT before it expires, or CI starts failing again with the
+    same error.
+
 ## 5. Commit and push
 
 ```bash
