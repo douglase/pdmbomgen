@@ -20,6 +20,12 @@ pages:
     # per-project in Settings > CI/CD > Variables.
     BOM_INPUT: vault/PLACEHOLDER_pdmout.csv
     BOM_CONFIG: bomgen.toml
+  before_script:
+    # python:3.12-slim has no git — needed both for pip's `git+https://...`
+    # install of pdmbomgen (requirements.txt) and for build_pages.sh's own
+    # `git log` provenance lookup.
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+      >/dev/null
   script:
     - pip install -r requirements.txt
     - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
