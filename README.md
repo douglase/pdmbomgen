@@ -1,5 +1,8 @@
 # bomgen
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License scan](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml/badge.svg)](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml)
+
 Convert SolidWorks **PDM Professional** BOM exports (CSV or XML) into
 human-readable, shareable reports:
 
@@ -114,6 +117,12 @@ tests, plus a golden snapshot (`tests/fixtures/golden_tree.json`) —
 regenerate it deliberately (delete and re-run) when derivation rules
 change.
 
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party dependency licenses, example-data
+provenance, and the automated license-scan safeguard are documented in
+[LICENSE-NOTES.md](LICENSE-NOTES.md).
+
 ## Repository notes
 
 - `examples/NCC-1701_pdmout.csv` is a sanitized (Star Trek-themed) copy of a
@@ -122,3 +131,4 @@ change.
 - `bomgen/` is the installable package (`pyproject.toml` at repo root);
   `bomgen/template.html` ships as package data and is read at runtime next
   to the installed module, so no manual co-location is needed.
+- This project was largely written with Claude Code.

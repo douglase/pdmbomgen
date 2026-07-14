@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
 """Tests for bomgen. Run: python -m pytest tests/ -v"""
 import json
 import sys

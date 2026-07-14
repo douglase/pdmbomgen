@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
+name: License scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scancode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scancode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install scancode-toolkit
+        # Pinned version; Dependabot (.github/dependabot.yml) opens a PR
+        # when a newer release is published on PyPI.
+        run: pip install scancode-toolkit==32.5.0 cffi
+
+      # LICENSE-NOTES.md and the allowlist checker describe the licensing
+      # policy meta-textually (they quote license names/identifiers in
+      # prose) — without --ignore on those, scancode would match the
+      # literal strings as if the docs/script were themselves licensed
+      # under them. template-repo/** intentionally carries no SPDX headers
+      # (it becomes a different repo's content once copied out — see
+      # LICENSE-NOTES.md), so it's excluded to avoid "no license detected"
+      # noise on every scan. examples/NCC-1701_pdmout_BOM.xlsx/.html are
+      # deliberately left IN scope (not ignored) — they're generated
+      # output with no vendored third-party license text and should scan
+      # clean; don't "fix" that by adding an ignore for them.
+      - name: Run scancode
+        run: |
+          mkdir -p scancode-results
+          scancode --license --copyright --info \
+            --ignore 'LICENSE-NOTES.md' \
+            --ignore 'scripts/check_scancode_allowlist.py' \
+            --ignore 'template-repo/**' \
+            --ignore '**/__pycache__/**' \
+            --ignore '.pytest_cache/**' \
+            --ignore 'build/**' \
+            --ignore '*.egg-info/**' \
+            --json-pp scancode-results/scancode.json \
+            .
+
+      - name: Check against allowlist
+        run: python scripts/check_scancode_allowlist.py scancode-results/scancode.json
+
+      - name: Upload scancode report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scancode-report
+          path: scancode-results/
+          retention-days: 30

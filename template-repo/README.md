@@ -49,3 +49,11 @@ the pdmbomgen repo for the design rationale and the tag-pinning trade-off.
 pip install -r requirements.txt
 bash scripts/build_pages.sh vault/PLACEHOLDER_pdmout.csv bomgen.toml _site
 ```
+
+## License
+
+This template folder is provided by [pdmbomgen] under the MIT license (see
+`LICENSE-NOTES.md` in the pdmbomgen repo) as a starting point to copy out.
+It carries no license header of its own — once you copy it into your own
+repo, that repo's data and CI config are yours to license however you
+choose; pdmbomgen itself remains a dependency, not vendored code.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
 # Build the static Pages site: index.html + the downloadable .xlsx, side by
 # side in one output directory. Called by both CI configs
 # (.github/workflows/pages.yml and .gitlab-ci.yml) so the build stays

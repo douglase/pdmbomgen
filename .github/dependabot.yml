@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
+#
+# Watches GitHub Actions versions used in .github/workflows/ and the
+# Python dependencies declared in pyproject.toml (openpyxl, pytest).
+# Updates arrive as PRs a reviewer can vet and merge. Not applied to
+# template-repo/requirements.txt — it pins pdmbomgen via a git URL
+# (git+https://.../pdmbomgen.git@main), which the pip ecosystem can't
+# usefully version-bump.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - github-actions
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - python
