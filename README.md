@@ -65,6 +65,14 @@ Configuration (project title block, column-name mapping, part-number
 regex, passthrough columns) lives in `bomgen.toml` — see the comments
 there and design doc §6.
 
+- **PDM viewer links** — set `[links].file_url_template` in `bomgen.toml`
+  to make each filename a clickable link to your PDM web viewer. `{file}`
+  is replaced with the URL-encoded SolidWorks filename (`.SLDASM` for
+  assemblies, `.SLDPRT` for parts), e.g.
+  `file_url_template = "https://your-pdm.example.edu/vault/PROJECT?view=bom&file={file}"`.
+  Empty (default) leaves filenames as plain text. HTML links the filename
+  in the Part Name; Excel makes the Part Name cell a hyperlink.
+
 When `--both` (or `--xlsx` and `--html` together) writes both files into
 the same directory, the HTML's **Download Excel** button links the .xlsx by
 relative filename automatically; `--xlsx-url` overrides the link target,

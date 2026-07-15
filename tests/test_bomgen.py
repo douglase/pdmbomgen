@@ -219,3 +219,49 @@ def test_cli_source_rev_flag(tmp_path):
                       "--source-rev", "deadbee", "--quiet"])
     assert rc == 0
     assert "deadbee" in (tmp_path / "o.html").read_text(encoding="utf-8")
+
+
+def test_pdm_file_url_links(tmp_path):
+    """Configurable file_url_template turns filenames into PDM-viewer links
+    in both outputs; {file} is substituted with the URL-encoded filename."""
+    cfg = bomgen.load_config(None)
+    cfg["links"]["file_url_template"] = (
+        "https://pdm.example.edu/vault/PROJ?view=bom&file={file}")
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    # a known part row: NCC-FP005.SLDPRT
+    node = idx["1.1.1"]
+    assert node.file_url == (
+        "https://pdm.example.edu/vault/PROJ?view=bom&file=NCC-FP005.SLDPRT")
+    # a filename with spaces is URL-encoded
+    shim = idx["1.1.5"]  # "Custom Injector Shim_WRP.SLDPRT"
+    assert "%20" in shim.file_url and " " not in shim.file_url
+
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+
+    page = h.read_text(encoding="utf-8")
+    # the per-row fileUrl lands in the embedded JSON data blob
+    assert '"fileUrl": "https://pdm.example.edu' in page
+    assert "file=NCC-FP005.SLDPRT" in page
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    # find the Part Name cell for the NCC-FP005 row and check its hyperlink
+    links = [c.hyperlink.target for row in ws.iter_rows() for c in row
+             if c.hyperlink]
+    assert any("NCC-FP005.SLDPRT" in t for t in links)
+
+
+def test_pdm_file_url_default_off(tmp_path):
+    """Default config (empty template) -> no file_url, no links; unchanged."""
+    cfg = bomgen.load_config(None)
+    assert cfg["links"]["file_url_template"] == ""
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    assert all(n.file_url == "" for n in bomgen.preorder(root))
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+    page = h.read_text(encoding="utf-8")
+    # fileUrl field is emitted but empty for every row; no populated links
+    assert '"fileUrl": ""' in page and '"fileUrl": "http' not in page

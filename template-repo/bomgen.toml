@@ -33,3 +33,10 @@ state_from_found_in = true
 
 [output]
 excel_font = "Aptos Narrow"
+
+[links]
+# Link each filename to your PDM web viewer. "{file}" is replaced with the
+# (URL-encoded) SolidWorks filename (e.g. ESC-FA001.SLDASM). Empty = no
+# links. Set host/vault path to yours, for example:
+# file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/PROJECT?view=bom&file={file}"
+file_url_template = ""

@@ -30,3 +30,11 @@ state_from_found_in = true
 
 [output]
 excel_font = "Aptos Narrow"
+
+[links]
+# Make each filename in the report a clickable link to your PDM web viewer.
+# "{file}" is replaced with the (URL-encoded) SolidWorks filename — e.g.
+# NCC-FA001.SLDASM for assemblies, NCC-FP005.SLDPRT for parts. Empty
+# (default) = no links. The host/vault path is yours to set; example:
+# file_url_template = "https://escpdm.as.arizona.edu/solidworkspdm/Steward_Obs_PDM/STP/LAZ/ESC?view=bom&file={file}"
+file_url_template = ""

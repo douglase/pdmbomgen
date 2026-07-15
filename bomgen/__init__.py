@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 try:
     import tomllib
@@ -59,6 +60,12 @@ DEFAULT_CONFIG = {
         "state_from_found_in": True,
     },
     "output": {"excel_font": "Aptos Narrow"},
+    "links": {
+        # URL template for linking each filename to a PDM web viewer.
+        # "{file}" is replaced with the (URL-encoded) SolidWorks filename,
+        # e.g. NCC-FA001.SLDASM. Empty -> filenames are not linked.
+        "file_url_template": "",
+    },
 }
 
 
@@ -95,6 +102,7 @@ class BomNode:
     is_assembly: bool = False
     cots: str = ""
     state: str = ""
+    file_url: str = ""
 
 
 class ValidationError(Exception):
@@ -307,6 +315,7 @@ def build_tree(header: list[str], rows: list[dict], cfg: dict,
 def derive(root: BomNode, cfg: dict) -> None:
     col, rules, proj = cfg["columns"], cfg["rules"], cfg["project"]
     pn_re = re.compile(rules["part_number_pattern"])
+    url_tmpl = cfg.get("links", {}).get("file_url_template", "")
 
     def visit(n: BomNode):
         if n.parent is not None:
@@ -324,6 +333,10 @@ def derive(root: BomNode, cfg: dict) -> None:
             desc = (n.raw.get(col["description"]) or "").strip()
             base = name or desc or stem.replace("_", " ")
             n.display_name = f"{base} ({n.filename})" if n.filename else base
+            # PDM viewer link: substitute the (URL-encoded) filename into the
+            # configured template; filename already carries .SLDASM/.SLDPRT.
+            if url_tmpl and n.filename:
+                n.file_url = url_tmpl.replace("{file}", quote(n.filename, safe=""))
             n.cots = (n.raw.get(col["cots"]) or "").strip()
             if rules["state_from_found_in"]:
                 fi = (n.raw.get(col["found_in"]) or "").replace("/", "\\")
@@ -462,6 +475,13 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
             c = ws[f"{L(n_mark + j)}{r}"]
             c.value = v
             c.font = F(14 if n.depth == 0 else 11, n.is_assembly)
+        if n.file_url:
+            # Part Name is logical column index 2; make the whole cell a
+            # hyperlink to the PDM viewer (xlsx can't link a substring).
+            c = ws[f"{L(n_mark + 2)}{r}"]
+            c.hyperlink = n.file_url
+            c.font = Font(name=fontname, size=(14 if n.depth == 0 else 11),
+                          bold=n.is_assembly, color="0563C1", underline="single")
         for i in range(n_mark):
             ws[f"{L(i)}{r}"].font = F(14 if n.depth == 0 else 11, True)
             ws[f"{L(i)}{r}"].alignment = Alignment(horizontal="center")
@@ -503,6 +523,7 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
         "desc": (n.raw.get(cfg["columns"]["description"]) or "").strip(),
         "cots": n.cots, "qty": n.qty, "qtyTotal": n.qty_total,
         "state": n.state, "asm": n.is_assembly,
+        "file": n.filename, "fileUrl": n.file_url,
         "extra": [(n.raw.get(p) or "").strip() for p in passthrough],
     } for n in nodes]
 

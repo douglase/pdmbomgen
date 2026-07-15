@@ -238,6 +238,10 @@ Features (all vanilla JS, ~300 lines):
   generation line gets a " · rev `{value}`" suffix; empty when omitted.
   bomgen treats the value as opaque text — no git dependency in bomgen
   itself — so it works with any VCS or provenance scheme a caller wants.
+- **PDM viewer links** *(D9)*: when `[links].file_url_template` is set, the
+  filename inside each Part Name becomes a link to the PDM web viewer
+  (`{file}` → URL-encoded SolidWorks filename). In Excel the Part Name cell
+  is a hyperlink instead (xlsx can't link a substring). Off by default.
 - Print stylesheet: tree fully expanded, controls hidden.
 
 ### 5.3 Pages publishing (compile-time .xlsx)
@@ -418,3 +422,4 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 | D6 | 2026-07-13 | Warnings promoted from HTML footer note to a yellow data-quality banner at the top of **both** outputs (Excel rows 2–5, HTML below header); new V7 check flags unresolved `SW-*@` property expressions (e.g. `SW-Mass@.SLDPRT`). |
 | D7 | 2026-07-13 | Packaged as an installable module: `bomgen.py` moved to `bomgen/__init__.py` + `bomgen/template.html` (package data) + `bomgen/__main__.py`, with `pyproject.toml` at repo root providing a `bomgen` console-script entry point. Still one file of logic (`__init__.py`); the split is packaging-only, not an architecture change. Lets downstream vault repos `pip install` straight from this repo instead of vendoring the script (§8.1). |
 | D8 | 2026-07-13 | `--source-rev` CLI flag: opaque provenance string (typically a git commit hash, computed by the caller — bomgen stays VCS-agnostic) embedded in both outputs, so a compiled report says which commit of the source CSV/XML it reflects. Backs the `template-repo/` vault-repo pattern (§8.1). |
+| D9 | 2026-07-15 | Filenames link to a PDM web viewer. New `[links].file_url_template` config key; `{file}` is replaced with the URL-encoded SolidWorks filename (which already carries `.SLDASM`/`.SLDPRT`). HTML linkifies the filename inside the Part Name; Excel makes the Part Name cell a hyperlink (xlsx can't link a substring). Empty template (default) = no links, unchanged output. The host/vault path is entirely project-configured, never hardcoded. |
