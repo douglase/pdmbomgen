@@ -392,7 +392,20 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 - Mass / cost roll-up columns (Mass column already passes through).
 - Optional live PDM access via SolidWrap instead of CSV.
 - Flight-hardware columns (TRL, CVCM/TML/WVR, temps, ECCN) promoted from
-  passthrough to first-class once the team populates them.
+  passthrough to first-class once the team populates them. The
+  material-derived subset (density, CTE, outgassing TML/CVCM, tensile/yield,
+  thermal props) is separately addressed by the **materials_database
+  enrichment** plan below.
+- **Material-property enrichment from `materials_database`** (deferred; full
+  design in [`MATERIALS_DB_PLAN.md`](MATERIALS_DB_PLAN.md)). A two-stage
+  design keeps bomgen network-free: an out-of-runtime sync script pulls the
+  database's unauthenticated `/export/raw-json` into a local JSON cache, and
+  bomgen (config-gated, `[materials].enabled`) merges matched properties from
+  that cache into each BOM row at generation time — additive, a no-op when
+  the cache is absent. A complementary path already exists on the database
+  side (`/export/solidworks` → `.sldmat` imported into the CAD material
+  library → properties flow through PDM as ordinary columns, needing no
+  bomgen change).
 
 ## Decision log
 | ID | Date | Decision |
