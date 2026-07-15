@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
+# SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors
 """bomgen — SolidWorks PDM Professional CSV BOM -> human-readable Excel + HTML.
 
 See BOMGEN_DESIGN.md. Single-module by design; deps: openpyxl (+ stdlib

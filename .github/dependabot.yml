@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
+# SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors
 #
 # Watches GitHub Actions versions used in .github/workflows/ and the
 # Python dependencies declared in pyproject.toml (openpyxl, pytest).

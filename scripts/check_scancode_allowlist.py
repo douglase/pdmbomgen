@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# SPDX-FileCopyrightText: 2026 Ed Douglas, University of Arizona and contributors
+# SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors
 """Fail CI if scancode-toolkit detects any license outside our allowlist.
 
 Reads a scancode JSON output file (the `--json-pp` artifact) and walks every
