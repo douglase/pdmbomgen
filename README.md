@@ -66,12 +66,15 @@ regex, passthrough columns) lives in `bomgen.toml` — see the comments
 there and design doc §6.
 
 - **PDM viewer links** — set `[links].file_url_template` in `bomgen.toml`
-  to make each filename a clickable link to your PDM web viewer. `{file}`
-  is replaced with the URL-encoded SolidWorks filename (`.SLDASM` for
-  assemblies, `.SLDPRT` for parts), e.g.
-  `file_url_template = "https://your-pdm.example.edu/vault/PROJECT?view=bom&file={file}"`.
-  Empty (default) leaves filenames as plain text. HTML links the filename
-  in the Part Name; Excel makes the Part Name cell a hyperlink.
+  to make each filename a clickable link to your PDM web viewer. Use
+  `{found_in}` (the row's Found In vault folder mapped to a URL — the
+  leading `<drive>:\<Vault>\` is stripped automatically for any drive
+  letter) and/or `{file}` (the SolidWorks filename), e.g.
+  `file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/{found_in}"`
+  turns a Found In of `D:\Vault\STP\ESC\Flight` into
+  `…/solidworkspdm/Vault/STP/ESC/Flight`. Empty (default) leaves filenames
+  as plain text. HTML links the filename in the Part Name; Excel makes the
+  Part Name cell a hyperlink.
 - **Material properties** — enrich rows with density, CTE, outgassing, etc.
   from a [materials database](MATERIALS_DB_PLAN.md) export. Commit that
   database's raw `/export/raw-json` dump (a JSON array of material

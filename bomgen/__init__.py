@@ -63,9 +63,16 @@ DEFAULT_CONFIG = {
     "output": {"excel_font": "Aptos Narrow"},
     "links": {
         # URL template for linking each filename to a PDM web viewer.
-        # "{file}" is replaced with the (URL-encoded) SolidWorks filename,
-        # e.g. NCC-FA001.SLDASM. Empty -> filenames are not linked.
+        # Placeholders (either/both), URL-encoded on substitution:
+        #   "{found_in}" -> the Found In vault path, local prefix stripped
+        #                   (see found_in_strip) and backslashes -> "/".
+        #   "{file}"     -> the SolidWorks filename, e.g. NCC-FA001.SLDASM.
+        # Empty -> filenames are not linked.
         "file_url_template": "",
+        # Local prefix removed from Found In before substituting {found_in},
+        # e.g. "D:\\Steward_Obs_PDM" so the web URL base can supply the vault
+        # root. A leading drive letter is dropped automatically regardless.
+        "found_in_strip": "",
     },
     "materials": {
         # Enrich rows with properties from a committed materials-database
@@ -324,10 +331,57 @@ def build_tree(header: list[str], rows: list[dict], cfg: dict,
     return root
 
 
+def _found_in_rest(found_in: str, strip: str) -> str:
+    """Found In vault path -> URL path tail (backslashes -> "/", each segment
+    URL-encoded). The leading drive letter is always dropped. Then:
+
+    - `strip` set: remove that literal prefix (itself drive-tolerant), e.g.
+      "D:\\Vault" or just "Vault".
+    - `strip` empty (default): also drop the first folder — the vault root —
+      matching any `<drive>:\\<Vault>\\…` path, since the URL base already
+      ends in the vault name. E.g. "E:\\Obs_PDM\\STP\\ESC\\Flight" ->
+      "STP/ESC/Flight".
+    """
+    def drop_drive(p: str) -> str:
+        return re.sub(r"^[A-Za-z]:", "", p.strip().replace("\\", "/")).strip("/")
+
+    fi = drop_drive(found_in or "")
+    s = drop_drive(strip or "")
+    if s:
+        if fi.lower().startswith(s.lower()):
+            fi = fi[len(s):].lstrip("/")
+    else:
+        # no explicit prefix -> drop the vault-root folder automatically
+        parts = fi.split("/", 1)
+        fi = parts[1] if len(parts) > 1 else ""
+    return "/".join(quote(seg, safe="") for seg in fi.split("/") if seg)
+
+
+def _build_file_url(template: str, found_in: str, strip: str,
+                    filename: str) -> str:
+    """Substitute {found_in}/{file} in the PDM URL template. Returns "" when
+    a placeholder the template uses has no source value (so no dead link)."""
+    if not template:
+        return ""
+    url = template
+    if "{found_in}" in url:
+        rest = _found_in_rest(found_in, strip)
+        if not rest:
+            return ""
+        url = url.replace("{found_in}", rest)
+    if "{file}" in url:
+        if not filename:
+            return ""
+        url = url.replace("{file}", quote(filename, safe=""))
+    return url
+
+
 def derive(root: BomNode, cfg: dict) -> None:
     col, rules, proj = cfg["columns"], cfg["rules"], cfg["project"]
     pn_re = re.compile(rules["part_number_pattern"])
-    url_tmpl = cfg.get("links", {}).get("file_url_template", "")
+    links = cfg.get("links", {})
+    url_tmpl = links.get("file_url_template", "")
+    found_in_strip = links.get("found_in_strip", "")
 
     def visit(n: BomNode):
         if n.parent is not None:
@@ -345,10 +399,12 @@ def derive(root: BomNode, cfg: dict) -> None:
             desc = (n.raw.get(col["description"]) or "").strip()
             base = name or desc or stem.replace("_", " ")
             n.display_name = f"{base} ({n.filename})" if n.filename else base
-            # PDM viewer link: substitute the (URL-encoded) filename into the
-            # configured template; filename already carries .SLDASM/.SLDPRT.
-            if url_tmpl and n.filename:
-                n.file_url = url_tmpl.replace("{file}", quote(n.filename, safe=""))
+            # PDM viewer link built from the configured template, using the
+            # Found In vault path and/or the filename (URL-encoded).
+            if url_tmpl:
+                n.file_url = _build_file_url(
+                    url_tmpl, n.raw.get(col["found_in"]), found_in_strip,
+                    n.filename)
             n.cots = (n.raw.get(col["cots"]) or "").strip()
             if rules["state_from_found_in"]:
                 fi = (n.raw.get(col["found_in"]) or "").replace("/", "\\")

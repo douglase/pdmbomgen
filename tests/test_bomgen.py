@@ -268,6 +268,70 @@ def test_pdm_file_url_default_off(tmp_path):
     assert '"fileUrl": ""' in page and '"fileUrl": "http' not in page
 
 
+def test_pdm_found_in_url_auto():
+    """By default {found_in} strips the leading <drive>:\\<vault>\\ for ANY
+    drive letter / vault name — no found_in_strip needed."""
+    cfg = bomgen.load_config(None)
+    cfg["links"]["file_url_template"] = (
+        "https://pdm.example.edu/solidworkspdm/Starfleet_PDM/{found_in}")
+    root, _ = parse(SAMPLE_CSV, cfg)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    # 1.1.1 Found In: D:\Starfleet_PDM\SFC\ENT\NCC\Flight -> drive+vault dropped
+    assert idx["1.1.1"].file_url == (
+        "https://pdm.example.edu/solidworkspdm/Starfleet_PDM/SFC/ENT/NCC/Flight")
+    # a folder with spaces (…\WIP\9000 - Piece Parts) is percent-encoded
+    assert "9000%20-%20Piece%20Parts" in idx["1.1.3"].file_url
+    assert " " not in idx["1.1.3"].file_url
+
+
+def test_pdm_found_in_drive_agnostic():
+    """Any drive letter works; the vault root is dropped by name-position."""
+    rest = bomgen._found_in_rest  # helper: (found_in, strip) -> url tail
+    assert rest("D:\\Obs_PDM\\STP\\ESC\\Flight", "") == "STP/ESC/Flight"
+    assert rest("E:\\Obs_PDM\\STP\\ESC\\Flight", "") == "STP/ESC/Flight"
+    assert rest("Z:\\Another_Vault\\A\\B", "") == "A/B"
+    # explicit override still supported (drive-tolerant)
+    assert rest("C:\\V\\STP\\ESC", "C:\\V\\STP") == "ESC"
+    assert rest("C:\\V\\STP\\ESC", "V\\STP") == "ESC"
+
+
+def test_pdm_found_in_url():
+    """Explicit found_in_strip override yields the same tail."""
+    cfg = bomgen.load_config(None)
+    cfg["links"]["file_url_template"] = (
+        "https://pdm.example.edu/solidworkspdm/Starfleet_PDM/{found_in}")
+    cfg["links"]["found_in_strip"] = "D:\\Starfleet_PDM"
+    root, _ = parse(SAMPLE_CSV, cfg)
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    assert idx["1.1.1"].file_url == (
+        "https://pdm.example.edu/solidworkspdm/Starfleet_PDM/SFC/ENT/NCC/Flight")
+
+
+def test_pdm_found_in_and_file():
+    """Both placeholders combine: folder path + filename query."""
+    cfg = bomgen.load_config(None)
+    cfg["links"]["file_url_template"] = (
+        "https://pdm.example.edu/vault/{found_in}?view=bom&file={file}")
+    cfg["links"]["found_in_strip"] = "D:\\Starfleet_PDM"
+    root, _ = parse(SAMPLE_CSV, cfg)
+    node = {n.path: n for n in bomgen.preorder(root)}["1.1.1"]
+    assert node.file_url == (
+        "https://pdm.example.edu/vault/SFC/ENT/NCC/Flight"
+        "?view=bom&file=NCC-FP005.SLDPRT")
+
+
+def test_pdm_found_in_missing_skips_link(tmp_path):
+    """A {found_in} template + a row with no Found In -> no dead link."""
+    csv = tmp_path / "nofoundin.csv"
+    csv.write_text("Level,Qty,Number,Found In\n"
+                   "1,1,NCC-FA002.SLDASM,\n"
+                   "1.1,1,NCC-FP001.SLDPRT,\n", encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    cfg["links"]["file_url_template"] = "https://pdm.example.edu/v/{found_in}"
+    root, _ = parse(csv, cfg)
+    assert all(n.file_url == "" for n in bomgen.preorder(root))
+
+
 # ------------------------------------------------------------ materials (Stage B)
 
 MATERIALS_JSON = FIX / "materials_raw.json"

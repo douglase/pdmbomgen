@@ -35,11 +35,17 @@ state_from_found_in = true
 excel_font = "Aptos Narrow"
 
 [links]
-# Link each filename to your PDM web viewer. "{file}" is replaced with the
-# (URL-encoded) SolidWorks filename (e.g. ESC-FA001.SLDASM). Empty = no
-# links. Set host/vault path to yours, for example:
-# file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/PROJECT?view=bom&file={file}"
+# Link each filename to your PDM web viewer. Template placeholders:
+#   {found_in} = the "Found In" vault folder mapped to a URL path; the
+#                leading "<drive>:\<Vault>\" is stripped automatically (any
+#                drive letter / vault name), backslashes -> "/".
+#   {file}     = the SolidWorks filename (e.g. ESC-FA001.SLDASM).
+# Empty = no links. Example (Found In D:\Vault\PROJECT\Flight ->
+# https://your-pdm.example.edu/solidworkspdm/Vault/PROJECT/Flight):
+# file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/{found_in}"
+# found_in_strip: optional literal-prefix override for non-standard layouts.
 file_url_template = ""
+found_in_strip = ""
 
 [materials]
 # Enrich rows with properties from the materials database. Commit the raw
