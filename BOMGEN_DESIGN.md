@@ -238,6 +238,17 @@ Features (all vanilla JS, ~300 lines):
   generation line gets a " · rev `{value}`" suffix; empty when omitted.
   bomgen treats the value as opaque text — no git dependency in bomgen
   itself — so it works with any VCS or provenance scheme a caller wants.
+- **PDM viewer links** *(D9)*: when `[links].file_url_template` is set, the
+  filename inside each Part Name becomes a link to the PDM web viewer
+  (`{file}` → URL-encoded SolidWorks filename). In Excel the Part Name cell
+  is a hyperlink instead (xlsx can't link a substring). Off by default.
+- **Material properties** *(D10)*: when `[materials].enabled`, each row's
+  `Material` is matched (by name/synonym, whitespace/case-insensitive)
+  against a committed materials-database export — the raw `/export/raw-json`
+  dump read from local disk (never the network) — and the configured
+  `properties` are appended as columns in both outputs via the same dynamic
+  passthrough mechanism (no `template.html` change). Cache-file trouble → V8;
+  unmatched materials → grouped V9. Full design in `MATERIALS_DB_PLAN.md`.
 - Print stylesheet: tree fully expanded, controls hidden.
 
 ### 5.3 Pages publishing (compile-time .xlsx)
@@ -313,6 +324,8 @@ Config lookup order: `--config PATH` → `./bomgen.toml` → built-in defaults.
 | V5 | required mapped columns present in header | error (except `cots`: warning) |
 | V6 | depth jumps >1 relative to previous row | warning (dotted paths make this legal but it usually signals a truncated export) |
 | V7 | cell holds an unresolved SolidWorks property expression (`SW-*@…`, e.g. `SW-Mass@.SLDPRT`) instead of an evaluated value — the file was never rebuilt/saved after the property was linked | warning, grouped per column with a count (fix in CAD, not in bomgen) |
+| V8 | materials enrichment enabled but the configured cache file is missing/unreadable | warning (properties left blank; feature otherwise off) |
+| V9 | a row's Material is not found in the materials-database export | warning, grouped with a count + examples (re-export the JSON or fix the name) |
 | R1 | duplicate dotted path repaired by re-appending zeros ("2.1"→"2.10") iff result equals next expected sibling — recovers Excel float-mangling of two-segment item numbers | warning (export direct from PDM to avoid entirely) |
 
 Errors abort before writing outputs. Warnings print to stderr **and render
@@ -392,7 +405,20 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 - Mass / cost roll-up columns (Mass column already passes through).
 - Optional live PDM access via SolidWrap instead of CSV.
 - Flight-hardware columns (TRL, CVCM/TML/WVR, temps, ECCN) promoted from
-  passthrough to first-class once the team populates them.
+  passthrough to first-class once the team populates them. The
+  material-derived subset (density, CTE, outgassing TML/CVCM, tensile/yield,
+  thermal props) is separately addressed by the **materials_database
+  enrichment** plan below.
+- **Material-property enrichment from `materials_database`** (deferred; full
+  design in [`MATERIALS_DB_PLAN.md`](MATERIALS_DB_PLAN.md)). A two-stage
+  design keeps bomgen network-free: an out-of-runtime sync script pulls the
+  database's unauthenticated `/export/raw-json` into a local JSON cache, and
+  bomgen (config-gated, `[materials].enabled`) merges matched properties from
+  that cache into each BOM row at generation time — additive, a no-op when
+  the cache is absent. A complementary path already exists on the database
+  side (`/export/solidworks` → `.sldmat` imported into the CAD material
+  library → properties flow through PDM as ordinary columns, needing no
+  bomgen change).
 
 ## Decision log
 | ID | Date | Decision |
@@ -405,3 +431,5 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 | D6 | 2026-07-13 | Warnings promoted from HTML footer note to a yellow data-quality banner at the top of **both** outputs (Excel rows 2–5, HTML below header); new V7 check flags unresolved `SW-*@` property expressions (e.g. `SW-Mass@.SLDPRT`). |
 | D7 | 2026-07-13 | Packaged as an installable module: `bomgen.py` moved to `bomgen/__init__.py` + `bomgen/template.html` (package data) + `bomgen/__main__.py`, with `pyproject.toml` at repo root providing a `bomgen` console-script entry point. Still one file of logic (`__init__.py`); the split is packaging-only, not an architecture change. Lets downstream vault repos `pip install` straight from this repo instead of vendoring the script (§8.1). |
 | D8 | 2026-07-13 | `--source-rev` CLI flag: opaque provenance string (typically a git commit hash, computed by the caller — bomgen stays VCS-agnostic) embedded in both outputs, so a compiled report says which commit of the source CSV/XML it reflects. Backs the `template-repo/` vault-repo pattern (§8.1). |
+| D9 | 2026-07-15 | Filenames link to a PDM web viewer. New `[links].file_url_template` config key; `{file}` is replaced with the URL-encoded SolidWorks filename (which already carries `.SLDASM`/`.SLDPRT`). HTML linkifies the filename inside the Part Name; Excel makes the Part Name cell a hyperlink (xlsx can't link a substring). Empty template (default) = no links, unchanged output. The host/vault path is entirely project-configured, never hardcoded. |
+| D10 | 2026-07-17 | Material-property enrichment (Stage B of `MATERIALS_DB_PLAN.md`). New `[materials]` config reads a committed materials-database `/export/raw-json` dump from **local disk** (never the network — keeps CI/HTML network-free) and appends chosen properties as columns, matched by Material name/synonym. `enrich_materials()` runs after `derive()`; `material_cache_key()` is the shared match contract. Off by default; missing file → V8, unmatched material → grouped V9; never aborts. The out-of-repo sync (Stage A) is unneeded when the dump is committed directly. |

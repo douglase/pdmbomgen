@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors
 """bomgen — SolidWorks PDM Professional CSV BOM -> human-readable Excel + HTML.
 
 See BOMGEN_DESIGN.md. Single-module by design; deps: openpyxl (+ stdlib
@@ -17,6 +19,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 try:
     import tomllib
@@ -48,6 +51,7 @@ DEFAULT_CONFIG = {
         "description": "Description",
         "found_in": "Found In",
         "cots": "COTS",
+        "material": "Material",
         "passthrough": [],
     },
     "rules": {
@@ -57,6 +61,22 @@ DEFAULT_CONFIG = {
         "state_from_found_in": True,
     },
     "output": {"excel_font": "Aptos Narrow"},
+    "links": {
+        # URL template for linking each filename to a PDM web viewer.
+        # "{file}" is replaced with the (URL-encoded) SolidWorks filename,
+        # e.g. NCC-FA001.SLDASM. Empty -> filenames are not linked.
+        "file_url_template": "",
+    },
+    "materials": {
+        # Enrich rows with properties from a committed materials-database
+        # export (the raw /export/raw-json dump: a JSON array of material
+        # documents). Local file only — bomgen never touches the network.
+        "enabled": False,
+        "cache_file": "",              # path to the raw-json dump
+        "properties": [],              # DB property keys to show as columns
+        "show_units": True,            # "2700 kg/m3" vs bare "2700"
+        "labels": {},                  # property_key -> column header override
+    },
 }
 
 
@@ -93,6 +113,8 @@ class BomNode:
     is_assembly: bool = False
     cots: str = ""
     state: str = ""
+    file_url: str = ""
+    material_props: dict = field(default_factory=dict)
 
 
 class ValidationError(Exception):
@@ -305,6 +327,7 @@ def build_tree(header: list[str], rows: list[dict], cfg: dict,
 def derive(root: BomNode, cfg: dict) -> None:
     col, rules, proj = cfg["columns"], cfg["rules"], cfg["project"]
     pn_re = re.compile(rules["part_number_pattern"])
+    url_tmpl = cfg.get("links", {}).get("file_url_template", "")
 
     def visit(n: BomNode):
         if n.parent is not None:
@@ -322,6 +345,10 @@ def derive(root: BomNode, cfg: dict) -> None:
             desc = (n.raw.get(col["description"]) or "").strip()
             base = name or desc or stem.replace("_", " ")
             n.display_name = f"{base} ({n.filename})" if n.filename else base
+            # PDM viewer link: substitute the (URL-encoded) filename into the
+            # configured template; filename already carries .SLDASM/.SLDPRT.
+            if url_tmpl and n.filename:
+                n.file_url = url_tmpl.replace("{file}", quote(n.filename, safe=""))
             n.cots = (n.raw.get(col["cots"]) or "").strip()
             if rules["state_from_found_in"]:
                 fi = (n.raw.get(col["found_in"]) or "").replace("/", "\\")
@@ -343,6 +370,99 @@ def preorder(root: BomNode) -> list[BomNode]:
 
     walk(root)
     return out
+
+
+# --------------------------------------------------------------------------- materials
+
+def material_cache_key(name: str) -> str:
+    """Normalize a material name for matching (whitespace-collapsed, casefold).
+
+    The shared contract between a materials-database export and this reader:
+    a BOM row's Material text matches a DB record iff their keys are equal.
+    """
+    return re.sub(r"\s+", " ", (name or "").strip()).casefold()
+
+
+def _material_index(docs: list) -> dict[str, dict]:
+    """Index a raw materials-database export (the /export/raw-json dump: a
+    list of material documents) by normalized name, each synonym aliased to
+    the same Properties map. Later duplicates lose to earlier ones."""
+    index: dict[str, dict] = {}
+    for d in docs:
+        if not isinstance(d, dict) or d.get("is_deleted"):
+            continue
+        name = d.get("Material")
+        if not name:
+            continue
+        props = d.get("Properties") if isinstance(d.get("Properties"), dict) else {}
+        for alias in [name, *(d.get("Material_Synonyms") or [])]:
+            key = material_cache_key(alias)
+            if key and key not in index:
+                index[key] = props
+    return index
+
+
+def enrich_materials(root: BomNode, cfg: dict, warnings: list[str]) -> None:
+    """Populate each node's material_props from a committed materials-database
+    export (config `[materials]`). Local-file only; no network. Purely
+    additive and a no-op unless `[materials].enabled`. Cache miss = blank
+    properties + a grouped warning, never an abort (cf. COTS / D1)."""
+    mat = cfg.get("materials", {})
+    if not mat.get("enabled"):
+        return
+    wanted = list(mat.get("properties", []))
+    show_units = mat.get("show_units", True)
+    col = cfg["columns"]
+    cache_file = mat.get("cache_file", "")
+    path = Path(cache_file) if cache_file else None
+
+    index: dict[str, dict] = {}
+    if path is None or not path.exists():
+        warnings.append(
+            f"V8: materials enrichment enabled but cache file "
+            f"'{cache_file}' not found; material properties left blank")
+    else:
+        try:
+            docs = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(docs, dict):  # tolerate {"materials": [...]} wrappers
+                docs = docs.get("materials") or docs.get("data") or [docs]
+            index = _material_index(docs)
+        except (json.JSONDecodeError, OSError) as e:
+            warnings.append(
+                f"V8: materials cache '{path}' unreadable ({e}); "
+                "material properties left blank")
+
+    misses: dict[str, int] = {}
+    for n in preorder(root):
+        if n.parent is None:
+            continue
+        raw_name = (n.raw.get(col["material"]) or "").strip()
+        if not raw_name:
+            continue
+        entry = index.get(material_cache_key(raw_name)) if index else None
+        if entry is None:
+            n.material_props = {p: "" for p in wanted}
+            if index:  # only a "miss" if we actually have a database to miss in
+                misses[raw_name] = misses.get(raw_name, 0) + 1
+            continue
+        rendered = {}
+        for p in wanted:
+            prop = entry.get(p)
+            if isinstance(prop, dict) and prop.get("value") is not None:
+                unit = prop.get("unit") or ""
+                rendered[p] = (f"{prop['value']} {unit}".strip()
+                               if show_units and unit else str(prop["value"]))
+            else:
+                rendered[p] = ""
+        n.material_props = rendered
+
+    if misses:
+        total = sum(misses.values())
+        examples = ", ".join(sorted(misses)[:3])
+        warnings.append(
+            f"V9: {total} row(s) reference {len(misses)} material(s) not found "
+            f"in the materials database (e.g. {examples}); properties left blank "
+            "— re-export the materials JSON or check the Material names")
 
 
 # --------------------------------------------------------------------------- excel
@@ -369,6 +489,10 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
     max_depth = max(n.depth for n in nodes)
     n_mark = max(rules["min_marker_columns"], max_depth)
     passthrough = list(colcfg.get("passthrough", []))
+    matcfg = cfg.get("materials", {})
+    mat_props = list(matcfg.get("properties", [])) if matcfg.get("enabled") else []
+    mat_headers = [matcfg.get("labels", {}).get(p, p.replace("_", " "))
+                   for p in mat_props]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -383,7 +507,7 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
         return get_column_letter(first + idx)
 
     headers = ["Level", "Abbreviated Part Number", "Part Name", "Description",
-               "COTS", "Qty (Assembly)", "Qty (Total)"] + passthrough
+               "COTS", "Qty (Assembly)", "Qty (Total)"] + passthrough + mat_headers
     total_cols = n_mark + len(headers)
 
     # ---- data-quality banner (rows 2-5 are blank in the template, so the
@@ -455,11 +579,19 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
             ws[f"{L(n.depth - 1)}{r}"] = "X"
         vals = [n.depth, n.part_number, n.display_name, desc, n.cots,
                 n.qty, n.qty_total] + [
-                    (n.raw.get(p) or "").strip() for p in passthrough]
+                    (n.raw.get(p) or "").strip() for p in passthrough] + [
+                    n.material_props.get(p, "") for p in mat_props]
         for j, v in enumerate(vals):
             c = ws[f"{L(n_mark + j)}{r}"]
             c.value = v
             c.font = F(14 if n.depth == 0 else 11, n.is_assembly)
+        if n.file_url:
+            # Part Name is logical column index 2; make the whole cell a
+            # hyperlink to the PDM viewer (xlsx can't link a substring).
+            c = ws[f"{L(n_mark + 2)}{r}"]
+            c.hyperlink = n.file_url
+            c.font = Font(name=fontname, size=(14 if n.depth == 0 else 11),
+                          bold=n.is_assembly, color="0563C1", underline="single")
         for i in range(n_mark):
             ws[f"{L(i)}{r}"].font = F(14 if n.depth == 0 else 11, True)
             ws[f"{L(i)}{r}"].alignment = Alignment(horizontal="center")
@@ -470,7 +602,8 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
     # ---- widths, freeze, autofilter
     for i in range(n_mark):
         ws.column_dimensions[L(i)].width = 5.3
-    for j, w in enumerate([9, 26, 62, 55, 8, 15, 12] + [14] * len(passthrough)):
+    for j, w in enumerate([9, 26, 62, 55, 8, 15, 12]
+                          + [14] * len(passthrough) + [14] * len(mat_props)):
         ws.column_dimensions[L(n_mark + j)].width = w
     ws.freeze_panes = f"B18"
     ws.auto_filter.ref = f"{L(n_mark)}17:{L(total_cols - 1)}{r - 1}"
@@ -494,6 +627,11 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
     (see template-repo/scripts/build_pages.sh) and pass it in verbatim."""
     proj = cfg["project"]
     passthrough = list(cfg["columns"].get("passthrough", []))
+    matcfg = cfg.get("materials", {})
+    mat_props = list(matcfg.get("properties", [])) if matcfg.get("enabled") else []
+    mat_headers = [matcfg.get("labels", {}).get(p, p.replace("_", " "))
+                   for p in mat_props]
+    extra_cols = passthrough + mat_headers
     nodes = preorder(root)
     data = [{
         "path": n.path, "depth": n.depth, "pn": n.part_number,
@@ -501,7 +639,9 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
         "desc": (n.raw.get(cfg["columns"]["description"]) or "").strip(),
         "cots": n.cots, "qty": n.qty, "qtyTotal": n.qty_total,
         "state": n.state, "asm": n.is_assembly,
-        "extra": [(n.raw.get(p) or "").strip() for p in passthrough],
+        "file": n.filename, "fileUrl": n.file_url,
+        "extra": [(n.raw.get(p) or "").strip() for p in passthrough]
+                 + [n.material_props.get(p, "") for p in mat_props],
     } for n in nodes]
 
     if warnings:
@@ -515,7 +655,7 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
     tmpl = Path(__file__).with_name("template.html").read_text(encoding="utf-8")
     page = (tmpl
             .replace("/*__DATA__*/", json.dumps(
-                {"rows": data, "extraCols": passthrough}, ensure_ascii=False))
+                {"rows": data, "extraCols": extra_cols}, ensure_ascii=False))
             .replace("__TITLE__", html.escape(proj["title_line"]))
             .replace("__SYSTEM__", html.escape(proj["system_name"]))
             .replace("__ASSY__", html.escape(proj["assembly_number"]))
@@ -547,6 +687,10 @@ def main(argv=None) -> int:
                     help="opaque provenance string embedded in both reports "
                          "(e.g. the input file's last git commit hash: "
                          "$(git log -1 --format=%%h -- INPUT)); blank if omitted")
+    ap.add_argument("--materials-cache", type=Path, default=None, metavar="PATH",
+                    help="raw materials-database export (/export/raw-json) to "
+                         "enrich rows from; overrides [materials].cache_file and "
+                         "implies enabled=true for this run")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -563,6 +707,10 @@ def main(argv=None) -> int:
         print(f"bomgen: validation errors:\n{e}", file=sys.stderr)
         return 1
     derive(root, cfg)
+    if a.materials_cache is not None:
+        cfg["materials"]["enabled"] = True
+        cfg["materials"]["cache_file"] = str(a.materials_cache)
+    enrich_materials(root, cfg, warnings)
 
     if not a.quiet:
         for w in warnings:

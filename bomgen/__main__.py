@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors
 import sys
 
 from . import main

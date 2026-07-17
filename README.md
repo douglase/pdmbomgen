@@ -1,5 +1,8 @@
 # bomgen
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License scan](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml/badge.svg)](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml)
+
 Convert SolidWorks **PDM Professional** BOM exports (CSV or XML) into
 human-readable, shareable reports:
 
@@ -62,6 +65,23 @@ Configuration (project title block, column-name mapping, part-number
 regex, passthrough columns) lives in `bomgen.toml` — see the comments
 there and design doc §6.
 
+- **PDM viewer links** — set `[links].file_url_template` in `bomgen.toml`
+  to make each filename a clickable link to your PDM web viewer. `{file}`
+  is replaced with the URL-encoded SolidWorks filename (`.SLDASM` for
+  assemblies, `.SLDPRT` for parts), e.g.
+  `file_url_template = "https://your-pdm.example.edu/vault/PROJECT?view=bom&file={file}"`.
+  Empty (default) leaves filenames as plain text. HTML links the filename
+  in the Part Name; Excel makes the Part Name cell a hyperlink.
+- **Material properties** — enrich rows with density, CTE, outgassing, etc.
+  from a [materials database](MATERIALS_DB_PLAN.md) export. Commit that
+  database's raw `/export/raw-json` dump (a JSON array of material
+  documents) next to your BOM and set `[materials]` in `bomgen.toml`
+  (`enabled`, `cache_file`, and the `properties` to show). bomgen matches
+  each row's `Material` against the DB (by name/synonym) and adds the
+  chosen properties as columns in both outputs. Local file only — no
+  network. Off by default; unmatched materials get a warning, never an
+  error.
+
 When `--both` (or `--xlsx` and `--html` together) writes both files into
 the same directory, the HTML's **Download Excel** button links the .xlsx by
 relative filename automatically; `--xlsx-url` overrides the link target,
@@ -90,6 +110,11 @@ stamps the compiled report with the git hash of the export's last commit,
 copy **[`template-repo/`](template-repo/)** into a new repo — see
 [`template-repo/SETUP.md`](template-repo/SETUP.md).
 
+⚠ That install is a plain `git clone` of **this** repo, so it only works
+anonymously if this repo is **public**. If it's private, either flip it to
+public (recommended — it's just the tool, no vault data lives here) or
+give downstream CI a token; see `template-repo/SETUP.md` §4.5 either way.
+
 ## Design & decisions
 
 `BOMGEN_DESIGN.md` is the living design document: input format findings
@@ -109,6 +134,12 @@ tests, plus a golden snapshot (`tests/fixtures/golden_tree.json`) —
 regenerate it deliberately (delete and re-run) when derivation rules
 change.
 
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party dependency licenses, example-data
+provenance, and the automated license-scan safeguard are documented in
+[LICENSE-NOTES.md](LICENSE-NOTES.md).
+
 ## Repository notes
 
 - `examples/NCC-1701_pdmout.csv` is a sanitized (Star Trek-themed) copy of a
@@ -117,3 +148,4 @@ change.
 - `bomgen/` is the installable package (`pyproject.toml` at repo root);
   `bomgen/template.html` ships as package data and is read at runtime next
   to the installed module, so no manual co-location is needed.
+- This project was largely written with Claude Code.

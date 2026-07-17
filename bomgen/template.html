@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT
+     SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -73,9 +75,15 @@ function render() {
     const pad = 14 * r.depth;
     const tg = r.hasKids ? `<span class="tg" data-p="${r.path}">${r.open ? "▾" : "▸"}</span>` : `<span class="tg"></span>`;
     const extras = r.extra.map(v => `<td>${esc(v)}</td>`).join("");
+    // linkify the filename inside the Part Name (e.g. "Base (NCC-FP005.SLDPRT)")
+    let nameHtml = esc(r.name);
+    if (r.fileUrl && r.file) {
+      const link = `(<a href="${esc(r.fileUrl)}" target="_blank" rel="noopener">${esc(r.file)}</a>)`;
+      nameHtml = nameHtml.replace(`(${esc(r.file)})`, link);
+    }
     return `<tr data-p="${r.path}" class="${r.asm ? "asm" : ""}">
       <td class="tw" style="padding-left:${8 + pad}px">${tg}<span class="path">${r.path === "0" ? "TOP" : r.path}</span></td>
-      <td class="pn">${esc(r.pn)}</td><td>${esc(r.name)}</td><td>${esc(r.desc)}</td>
+      <td class="pn">${esc(r.pn)}</td><td>${nameHtml}</td><td>${esc(r.desc)}</td>
       <td>${r.cots ? '<span class="badge">' + esc(r.cots) + "</span>" : ""}</td>
       <td class="num">${r.qty}</td><td class="num">${r.qtyTotal}</td>
       <td class="state">${esc(r.state)}</td>${extras}</tr>`;

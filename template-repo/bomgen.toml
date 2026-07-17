@@ -33,3 +33,20 @@ state_from_found_in = true
 
 [output]
 excel_font = "Aptos Narrow"
+
+[links]
+# Link each filename to your PDM web viewer. "{file}" is replaced with the
+# (URL-encoded) SolidWorks filename (e.g. ESC-FA001.SLDASM). Empty = no
+# links. Set host/vault path to yours, for example:
+# file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/PROJECT?view=bom&file={file}"
+file_url_template = ""
+
+[materials]
+# Enrich rows with properties from the materials database. Commit the raw
+# /export/raw-json dump alongside your BOM export and point cache_file at it
+# (bomgen reads it from disk, never the network). Match is by material name.
+# enabled    = true
+# cache_file = "vault/materials.json"
+# properties = ["Density_kg/m3", "CTE_u/k", "Tensile_Strength_mpa"]
+# labels     = { "Total_mass_loss" = "TML" }   # quote keys that contain "/"
+enabled = false

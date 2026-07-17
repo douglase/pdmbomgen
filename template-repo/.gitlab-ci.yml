@@ -20,6 +20,21 @@ pages:
     # per-project in Settings > CI/CD > Variables.
     BOM_INPUT: vault/PLACEHOLDER_pdmout.csv
     BOM_CONFIG: bomgen.toml
+  before_script:
+    # python:3.12-slim has no git — needed both for pip's `git+https://...`
+    # install of pdmbomgen (requirements.txt) and for build_pages.sh's own
+    # `git log` provenance lookup.
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+      >/dev/null
+    # If pdmbomgen is a private repo, anonymous `git clone` fails
+    # ("could not read Username"). Set a masked/protected CI/CD variable
+    # PDMBOMGEN_TOKEN (Settings > CI/CD > Variables) to a GitHub PAT with
+    # read-only access to it, and this rewrites the clone URL to use it.
+    # No-op (and no setup needed) if pdmbomgen is public — see ../SETUP.md.
+    - |
+      if [ -n "${PDMBOMGEN_TOKEN:-}" ]; then
+        git config --global url."https://oauth2:${PDMBOMGEN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      fi
   script:
     - pip install -r requirements.txt
     - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
