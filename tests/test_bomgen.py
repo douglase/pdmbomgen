@@ -24,6 +24,7 @@ def parse(path, cfg=None):
         header, rows = bomgen.read_csv(path)
     root = bomgen.build_tree(header, rows, cfg, warnings)
     bomgen.derive(root, cfg)
+    bomgen.enrich_materials(root, cfg, warnings)
     return root, warnings
 
 
@@ -265,3 +266,89 @@ def test_pdm_file_url_default_off(tmp_path):
     page = h.read_text(encoding="utf-8")
     # fileUrl field is emitted but empty for every row; no populated links
     assert '"fileUrl": ""' in page and '"fileUrl": "http' not in page
+
+
+# ------------------------------------------------------------ materials (Stage B)
+
+MATERIALS_JSON = FIX / "materials_raw.json"
+
+
+def _materials_cfg(**over):
+    cfg = bomgen.load_config(None)
+    cfg["materials"].update({
+        "enabled": True, "cache_file": str(MATERIALS_JSON),
+        "properties": ["Density_kg/m3", "Tensile_Strength_mpa"],
+    })
+    cfg["materials"].update(over)
+    return cfg
+
+
+def test_materials_key_normalization():
+    k = bomgen.material_cache_key
+    assert k("  Tritanium   18-8 ") == k("tritanium 18-8")
+    assert k("") == "" and k(None) == ""
+
+
+def test_materials_enrichment_match():
+    """A raw /export/raw-json dump enriches rows whose Material matches."""
+    root, warnings = parse(SAMPLE_CSV, _materials_cfg())
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    # 1.1.3 is a "Tritanium 18-8" washer in the example CSV
+    assert idx["1.1.3"].material_props["Density_kg/m3"] == "8000 kg/m3"
+    assert idx["1.1.3"].material_props["Tensile_Strength_mpa"] == "620 MPa"
+    # 1.1.4 is "Duranium A286 Alloy" — has density, no tensile in the DB
+    assert idx["1.1.4"].material_props["Density_kg/m3"] == "7920 kg/m3"
+    assert idx["1.1.4"].material_props["Tensile_Strength_mpa"] == ""
+    # unmatched materials in the example produce a grouped V9 warning
+    assert any(w.startswith("V9") for w in warnings)
+
+
+def test_materials_show_units_false():
+    root, _ = parse(SAMPLE_CSV, _materials_cfg(show_units=False))
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    assert idx["1.1.3"].material_props["Density_kg/m3"] == "8000"
+
+
+def test_materials_synonym_match(tmp_path):
+    """A Material that matches a DB synonym still resolves."""
+    csv = tmp_path / "syn.csv"
+    csv.write_text("Level,Qty,Number,Material,COTS\n"
+                   "1,1,NCC-FA002.SLDASM,,\n"
+                   "1.1,1,NCC-FP001.SLDPRT,18-8,\n", encoding="utf-8")
+    root, _ = parse(csv, _materials_cfg())
+    idx = {n.path: n for n in bomgen.preorder(root)}
+    assert idx["1.1"].material_props["Density_kg/m3"] == "8000 kg/m3"
+
+
+def test_materials_cache_missing_warns():
+    cfg = _materials_cfg(cache_file="/no/such/materials.json")
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    assert any(w.startswith("V8") for w in warnings)
+    assert all(n.material_props.get("Density_kg/m3", "") == ""
+               for n in bomgen.preorder(root) if n.parent)
+
+
+def test_materials_disabled_is_noop():
+    """Default config -> no enrichment, no material columns, no warnings."""
+    cfg = bomgen.load_config(None)
+    assert cfg["materials"]["enabled"] is False
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    assert all(n.material_props == {} for n in bomgen.preorder(root))
+    assert not any(w.startswith(("V8", "V9")) for w in warnings)
+
+
+def test_materials_render_both_outputs(tmp_path):
+    cfg = _materials_cfg(labels={"Density_kg/m3": "Density"})
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    x, h = tmp_path / "o.xlsx", tmp_path / "o.html"
+    bomgen.write_excel(root, cfg, x, warnings)
+    bomgen.write_html(root, cfg, "src.csv", h, warnings)
+
+    page = h.read_text(encoding="utf-8")
+    assert '"Density"' in page and "8000 kg/m3" in page
+
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    row17 = [c.value for c in ws[17] if c.value is not None]
+    assert "Density" in row17            # labeled header
+    assert "Tensile Strength mpa" in row17  # default underscore->space label

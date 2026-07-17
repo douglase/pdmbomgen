@@ -72,6 +72,15 @@ there and design doc §6.
   `file_url_template = "https://your-pdm.example.edu/vault/PROJECT?view=bom&file={file}"`.
   Empty (default) leaves filenames as plain text. HTML links the filename
   in the Part Name; Excel makes the Part Name cell a hyperlink.
+- **Material properties** — enrich rows with density, CTE, outgassing, etc.
+  from a [materials database](MATERIALS_DB_PLAN.md) export. Commit that
+  database's raw `/export/raw-json` dump (a JSON array of material
+  documents) next to your BOM and set `[materials]` in `bomgen.toml`
+  (`enabled`, `cache_file`, and the `properties` to show). bomgen matches
+  each row's `Material` against the DB (by name/synonym) and adds the
+  chosen properties as columns in both outputs. Local file only — no
+  network. Off by default; unmatched materials get a warning, never an
+  error.
 
 When `--both` (or `--xlsx` and `--html` together) writes both files into
 the same directory, the HTML's **Download Excel** button links the .xlsx by

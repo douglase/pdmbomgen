@@ -38,3 +38,19 @@ excel_font = "Aptos Narrow"
 # (default) = no links. The host/vault path is yours to set; example:
 # file_url_template = "https://escpdm.as.arizona.edu/solidworkspdm/Steward_Obs_PDM/STP/LAZ/ESC?view=bom&file={file}"
 file_url_template = ""
+
+[materials]
+# Enrich rows with material properties from the materials database. Commit
+# the raw /export/raw-json dump (a JSON array of material documents) next to
+# your BOM export and point cache_file at it — bomgen reads it from disk,
+# never the network. Matching is by the [columns].material value against each
+# record's Material / Material_Synonyms (whitespace/case-insensitive).
+# Enable and configure per project:
+# enabled    = true
+# cache_file = "materials.json"
+# properties = ["Density_kg/m3", "CTE_u/k", "Tensile_Strength_mpa",
+#                "Total_mass_loss", "Collected_volatile_condensed_mass"]
+# show_units = true       # "2700 kg/m3" vs bare "2700"
+# NB: property keys contain "/", so quote them as TOML keys in `labels`:
+# labels = { "Total_mass_loss" = "TML", "Collected_volatile_condensed_mass" = "CVCM" }
+enabled = false

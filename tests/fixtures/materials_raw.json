@@ -1,0 +1,32 @@
+[
+  {
+    "Material": "Tritanium 18-8",
+    "Material_Synonyms": ["Tritanium SS", "18-8"],
+    "Specification": ["Fleet-Spec-A"],
+    "Properties": {
+      "Density_kg/m3": {"value": 8000, "unit": "kg/m3", "reference": ""},
+      "Tensile_Strength_mpa": {"value": 620, "unit": "MPa", "reference": "Tbl 3"}
+    },
+    "is_deleted": false
+  },
+  {
+    "Material": "Duranium A286 Alloy",
+    "Material_Synonyms": [],
+    "Properties": {
+      "Density_kg/m3": {"value": 7920, "unit": "kg/m3"},
+      "CTE_u/k": {"value": 16.9, "unit": "u/k"}
+    },
+    "is_deleted": false
+  },
+  {
+    "Material": "Nitronium 60 Duranium Alloy",
+    "Properties": {
+      "Density_kg/m3": {"value": 8030, "unit": "kg/m3"}
+    }
+  },
+  {
+    "Material": "Retired Alloy",
+    "Properties": {"Density_kg/m3": {"value": 1, "unit": "kg/m3"}},
+    "is_deleted": true
+  }
+]

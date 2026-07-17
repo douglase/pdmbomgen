@@ -1,8 +1,36 @@
 # Plan: material-property enrichment from `materials_database`
 
-**Status: deferred / not yet implemented.** This is a design record for a
-future feature, captured so the work can start from a known position rather
-than a blank page. Nothing here is wired into bomgen today.
+**Status: Stage B implemented** (decision D10, `[materials]` config +
+`enrich_materials()` in `bomgen/__init__.py`). bomgen now reads a committed
+materials-database export from local disk and enriches rows — see "How it
+works today" below. Stage A (a live-DB sync script) is **not** built and is
+unnecessary when the export JSON is committed to the repo directly.
+
+## How it works today (implemented — Stage B)
+
+1. Export the database: on the materials_database web UI, or
+   `GET /export/raw-json`, download the JSON array of material documents.
+2. Commit that file next to your BOM export (e.g. `vault/materials.json`).
+3. In `bomgen.toml`, enable `[materials]` and list the property keys to show:
+   ```toml
+   [materials]
+   enabled    = true
+   cache_file = "vault/materials.json"
+   properties = ["Density_kg/m3", "CTE_u/k", "Tensile_Strength_mpa"]
+   # property keys contain "/", so quote them as TOML keys in `labels`:
+   labels     = { "Total_mass_loss" = "TML", "Collected_volatile_condensed_mass" = "CVCM" }
+   ```
+   Or override per run: `bomgen INPUT.csv --materials-cache vault/materials.json`.
+4. bomgen matches each row's `Material` (config `[columns].material`) against
+   the export by name **and** synonym (whitespace/case-insensitive) and adds
+   the chosen properties as columns in both the Excel and HTML reports.
+   Values render as `value unit` (or bare value with `show_units = false`).
+   Unmatched materials are left blank and reported once (V9); a missing/
+   unreadable cache file reports V8. Disabled (default) = unchanged output.
+
+Everything reads from local disk — bomgen never contacts the database. Keep
+the committed JSON fresh by re-exporting when the database changes (a manual
+step today; a scheduled Stage A sync could automate it later — below).
 
 ## Why
 
