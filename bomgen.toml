@@ -33,11 +33,22 @@ excel_font = "Aptos Narrow"
 
 [links]
 # Make each filename in the report a clickable link to your PDM web viewer.
-# "{file}" is replaced with the (URL-encoded) SolidWorks filename — e.g.
-# NCC-FA001.SLDASM for assemblies, NCC-FP005.SLDPRT for parts. Empty
-# (default) = no links. The host/vault path is yours to set; example:
-# file_url_template = "https://escpdm.as.arizona.edu/solidworkspdm/Steward_Obs_PDM/STP/LAZ/ESC?view=bom&file={file}"
+# Placeholders in the template (URL-encoded on substitution):
+#   {found_in} = the "Found In" vault folder mapped to a URL path. By default
+#                the leading "<drive>:\<Vault>\" is stripped automatically —
+#                any drive letter, any vault name — because your base URL
+#                already ends in the vault name. Backslashes become "/".
+#   {file}     = the SolidWorks filename (NCC-FA001.SLDASM / NCC-FP005.SLDPRT).
+# Empty template (default) = no links. Example — a Found In of
+#   D:\Steward_Obs_PDM\STP\LAZ\ESC\Flight  (or E:\…, C:\…)
+# with the base below yields
+#   https://escpdm.as.arizona.edu/solidworkspdm/Steward_Obs_PDM/STP/LAZ/ESC/Flight
+# file_url_template = "https://escpdm.as.arizona.edu/solidworkspdm/Steward_Obs_PDM/{found_in}"
+# found_in_strip: optional override if the auto "<drive>:\<Vault>\" strip
+# isn't right for your layout — a literal prefix to remove instead, e.g.
+# "D:\\Steward_Obs_PDM\\STP" to also drop a fixed sub-folder.
 file_url_template = ""
+found_in_strip = ""
 
 [materials]
 # Enrich rows with material properties from the materials database. Commit
