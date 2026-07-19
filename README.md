@@ -89,6 +89,16 @@ there and design doc §6.
   piece parts); parts under no spec are reported as *(unassigned)* so
   budget gaps stay visible (warnings V10–V12). In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
+- **Change highlighting & historical versions** — `--diff-against PREV.csv`
+  highlights rows changed/added since a previous version **green** in every
+  output (removed parts are summarized in the banner); only report columns
+  are compared, so PDM churn like *Checked Out By* never lights a row
+  (`[diff].ignore_columns` to exclude more). In CI, `BUILD_HISTORY=1`
+  rebuilds **every git tag** with the current generator into `v/<tag>/` —
+  yellow historical chrome with a "view current" link, a version dropdown
+  on every page, and per-tag diffs against the previous tag; the current
+  page diffs against the previous commit. `--historical LABEL` marks any
+  build as historical manually.
 - **Material properties** — enrich rows with density, CTE, outgassing, etc.
   from a [materials database](MATERIALS_DB_PLAN.md) export. Commit that
   database's raw `/export/raw-json` dump (a JSON array of material

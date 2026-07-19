@@ -31,6 +31,13 @@ state_from_found_in = true
 [output]
 excel_font = "Aptos Narrow"
 
+[diff]
+# Change highlighting (--diff-against): only report columns (mapped +
+# passthrough) are compared, so unmapped PDM churn like "Checked Out By"
+# never flags a row. List report columns here to exclude them too:
+# ignore_columns = ["Rev"]
+ignore_columns = []
+
 [budget]
 # Spec/RFQ budget rollup (bomgen --budget / --dashboard). Parts are flagged
 # into procurement categories via a spec-document reference column in the

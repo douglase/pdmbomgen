@@ -30,7 +30,9 @@ th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertic
 th{background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 tr.spec>td{background:var(--asm);font-weight:600;cursor:pointer}
 tr.spec.unassigned>td{background:var(--hit)}
+tr.chg>td{background:#e2efda}
 tr.hit>td{background:var(--hit)}
+#verbox select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff}
 td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.pn{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .tg{display:inline-block;width:1.1em;cursor:pointer;user-select:none;color:var(--accent)}
@@ -43,6 +45,7 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
 </style>
 </head>
 <body>
+__HISTORICAL__
 <header>
   <h1>Hardware Budget by Spec — __ASSY__</h1>
   <div class="meta">__TITLE__ · __SYSTEM__ · __CONTACT__</div>
@@ -56,6 +59,7 @@ __WARNBOX__
   <button data-x="none">Collapse all</button>
   <a id="dlb" class="btn" href="__BUDGET_XLSX_HREF__" download>&#8681; Budget workbook (.xlsx)</a>
   <a id="bom" class="btn" href="__BOM_HREF__">&#8598; Full BOM</a>
+  <span id="verbox"></span>
   <span id="count" class="muted"></span>
 </div>
 <table id="t"><thead><tr>
@@ -78,6 +82,7 @@ const tiles = [
   {v: DATA.counts.totalQty, l: "Total part qty"},
   {v: DATA.counts.unassignedLines, l: "Unassigned parts", warn: DATA.counts.unassignedLines > 0},
 ];
+if (DATA.diffed) tiles.push({v: DATA.counts.changed, l: "Changed vs previous"});
 document.getElementById("tiles").innerHTML = tiles.map(t =>
   `<div class="tile${t.warn ? " warn" : ""}"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join("");
 
@@ -96,7 +101,9 @@ function render() {
         ? `<a href="${esc(l.fileUrl)}" target="_blank" rel="noopener">${esc(l.file)}</a>` : esc(l.file);
       const nm = l.file && l.name.endsWith(`(${l.file})`)
         ? esc(l.name.slice(0, -l.file.length - 2)) + `(${file})` : esc(l.name);
-      return `<tr data-g="${gi}" data-l="${li}" class="line">
+      const cls = "line" + (l.diff ? " chg" : "");
+      const dtitle = l.diff ? ` title="${l.diff} vs previous version"` : "";
+      return `<tr data-g="${gi}" data-l="${li}" class="${cls}"${dtitle}>
         <td class="pn" style="padding-left:26px">${esc(l.pn)}</td>
         <td>${nm}</td><td class="pn">${esc(l.config)}</td>
         <td>${l.cots ? '<span class="badge">' + esc(l.cots) + "</span>" : ""}</td>
@@ -142,6 +149,21 @@ for (const id of ["dlb", "bom"]) {
   if (!a.getAttribute("href")) a.remove();
 }
 render();
+// version dropdown from optional sibling versions.js (see template.html)
+function verMenu() {
+  const V = window.BOMGEN_VERSIONS; if (!V || !V.versions?.length) return;
+  const sel = document.createElement("select");
+  sel.title = "View another tagged version";
+  for (const v of V.versions) {
+    const o = document.createElement("option");
+    o.value = v.href; o.textContent = v.label;
+    if (v.label === V.current) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => { if (sel.value) location.href = sel.value; };
+  document.getElementById("verbox").appendChild(sel);
+}
 </script>
+<script src="versions.js" onload="verMenu()"></script>
 </body>
 </html>

@@ -448,6 +448,148 @@ def test_pdm_found_in_missing_skips_link(tmp_path):
     assert all(n.file_url == "" for n in bomgen.preorder(root))
 
 
+# ------------------------------------------------------------ diff / historical
+
+DIFF_PREV = ("Level,Qty,Number,Name,Specs,Checked Out By\n"
+             "1,1,NCC-FA010.SLDASM,Weldment,SPEC-A,\n"
+             "1.1,2,NCC-FP030.SLDPRT,Bracket,,\n"
+             "2,1,NCC-FP050.SLDPRT,Gasket,,alice\n")
+DIFF_CUR = ("Level,Qty,Number,Name,Specs,Checked Out By\n"
+            "1,1,NCC-FA010.SLDASM,Weldment,SPEC-A,\n"
+            "1.1,3,NCC-FP030.SLDPRT,Bracket,,\n"
+            "3,1,NCC-FP060.SLDPRT,NewPart,,bob\n")
+
+
+def _diffed(tmp_path, prev_text, cur_text, cfg=None):
+    prev = tmp_path / "prev.csv"; prev.write_text(prev_text, encoding="utf-8")
+    cur = tmp_path / "cur.csv"; cur.write_text(cur_text, encoding="utf-8")
+    cfg = cfg or bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(cur)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    bomgen.apply_diff(root, prev, cfg, warnings)
+    return root, warnings
+
+
+def test_diff_changed_added_removed(tmp_path):
+    root, warnings = _diffed(tmp_path, DIFF_PREV, DIFF_CUR)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == "changed"   # qty 2 -> 3
+    assert idx["NCC-FP060.SLDPRT"].diff == "added"
+    assert idx["NCC-FA010.SLDASM"].diff == ""          # untouched
+    d = [w for w in warnings if w.startswith("DIFF")]
+    assert len(d) == 1 and "1 row(s) changed" in d[0] and "1 added" in d[0]
+    assert "NCC-FP050.SLDPRT" in d[0]                  # removed, in banner
+
+
+def test_diff_ignores_unmapped_and_configured_columns(tmp_path):
+    # only "Checked Out By" (unmapped churn) differs -> no change flagged
+    prev = DIFF_CUR.replace(",bob\n", ",carol\n")
+    root, warnings = _diffed(tmp_path, prev, DIFF_CUR)
+    assert all(n.diff == "" for n in bomgen.preorder(root))
+    assert not any(w.startswith("DIFF") for w in warnings)
+    # a mapped column can be excluded via [diff].ignore_columns
+    cfg = bomgen.load_config(None)
+    cfg["diff"]["ignore_columns"] = ["Qty"]
+    root, _ = _diffed(tmp_path, DIFF_PREV.replace(",alice\n", ",\n")
+                      .replace("2,1,NCC-FP050.SLDPRT,Gasket,,\n", ""),
+                      DIFF_CUR.replace("3,1,NCC-FP060.SLDPRT,NewPart,,bob\n", ""),
+                      cfg=cfg)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == ""          # qty diff ignored
+
+
+def test_diff_move_is_not_a_change(tmp_path):
+    prev = ("Level,Qty,Number,Name\n"
+            "1,1,NCC-FA010.SLDASM,Asm\n"
+            "1.1,2,NCC-FP030.SLDPRT,Bracket\n")
+    cur = ("Level,Qty,Number,Name\n"
+           "1,1,NCC-FA010.SLDASM,Asm\n"
+           "2,2,NCC-FP030.SLDPRT,Bracket\n")   # moved to top level, same data
+    root, warnings = _diffed(tmp_path, prev, cur)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == ""
+    assert not any(w.startswith("DIFF") for w in warnings)
+
+
+def test_diff_unreadable_prev_warns_not_aborts(tmp_path):
+    cur = tmp_path / "cur.csv"; cur.write_text(DIFF_CUR, encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(cur)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    bomgen.apply_diff(root, tmp_path / "nope.csv", cfg, warnings)
+    assert any(w.startswith("DIFF") and "skipped" in w for w in warnings)
+    assert all(n.diff == "" for n in bomgen.preorder(root))
+
+
+def test_cli_diff_and_historical(tmp_path):
+    prev = tmp_path / "prev.csv"; prev.write_text(DIFF_PREV, encoding="utf-8")
+    cur = tmp_path / "cur.csv"; cur.write_text(DIFF_CUR, encoding="utf-8")
+    rc = bomgen.main([str(cur), "--both", "--budget", "--dashboard",
+                      "--diff-against", str(prev),
+                      "--historical", "v0.2 (2026-07-01)",
+                      "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "cur_BOM.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in page and "Historical version v0.2" in page
+    assert '"diff": "changed"' in page and '"diff": "added"' in page
+    dash = (tmp_path / "cur_Dashboard.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in dash and '"diffed": true' in dash
+
+    import openpyxl
+    ws = openpyxl.load_workbook(tmp_path / "cur_BOM.xlsx").active
+    assert "HISTORICAL VERSION" in (ws["B1"].value or "")
+    # some data cell carries the green diff fill
+    greens = [c for row in ws.iter_rows() for c in row
+              if c.fill and c.fill.fgColor and c.fill.fgColor.rgb == "00E2EFDA"]
+    assert greens
+    wb = openpyxl.load_workbook(tmp_path / "cur_Budget.xlsx")
+    bcells = [c.value for row in wb["Budget"].iter_rows() for c in row
+              if isinstance(c.value, str)]
+    assert any("HISTORICAL VERSION" in v for v in bcells)
+    pgreens = [c for row in wb["Parts"].iter_rows() for c in row
+               if c.fill and c.fill.fgColor and c.fill.fgColor.rgb == "00E2EFDA"]
+    assert pgreens
+
+
+def test_build_pages_history_integration(tmp_path):
+    """End-to-end: a git repo with two tags -> per-tag pages, versions.js,
+    yellow chrome on tags only, skip-safe."""
+    import subprocess, os
+    repo = tmp_path / "repo"; repo.mkdir()
+    env = {**os.environ, "PYTHONPATH": str(REPO), "BUILD_HISTORY": "1",
+           "BOMGEN": "python -m bomgen",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e.c",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@e.c"}
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, env=env, check=True,
+                       capture_output=True)
+    git("init", "-q")
+    (repo / "bom.csv").write_text(DIFF_PREV, encoding="utf-8")
+    git("add", "-A"); git("commit", "-qm", "one"); git("tag", "t1")
+    (repo / "bom.csv").write_text(DIFF_CUR, encoding="utf-8")
+    git("add", "-A"); git("commit", "-qm", "two"); git("tag", "t2")
+    r = subprocess.run(["bash", str(REPO / "scripts" / "build_pages.sh"),
+                        "bom.csv", str(REPO / "bomgen.toml"), "site"],
+                       cwd=repo, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    site = repo / "site"
+    assert (site / "index.html").exists()
+    assert (site / "v" / "t1" / "index.html").exists()
+    assert (site / "v" / "t2" / "index.html").exists()
+    assert "t2" in (site / "versions.js").read_text()
+    t2 = (site / "v" / "t2" / "index.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in t2                       # yellow on tag page
+    assert '"diff": "changed"' in t2                  # diffed vs t1
+    cur = (site / "index.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' not in cur                  # current not yellow
+    v2 = (site / "v" / "t2" / "versions.js").read_text()
+    assert '"../../index.html"' in v2                 # relative root link
+
+
 # ------------------------------------------------------------ materials (Stage B)
 
 MATERIALS_JSON = FIX / "materials_raw.json"

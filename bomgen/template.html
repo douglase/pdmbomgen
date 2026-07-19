@@ -21,7 +21,9 @@ table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{position:sticky;top:52px;background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em;z-index:1}
 tr.asm>td{background:var(--asm);font-weight:600}
+tr.chg>td{background:#e2efda}
 tr.hit>td{background:var(--hit)}
+#verbox select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff}
 td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.pn{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .tw{white-space:nowrap}
@@ -37,6 +39,7 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
 </style>
 </head>
 <body>
+__HISTORICAL__
 <header>
   <h1>Bill of Materials — __ASSY__</h1>
   <div class="meta">__TITLE__ · __SYSTEM__ · __CONTACT__</div>
@@ -50,6 +53,7 @@ __WARNBOX__
   <span id="lvlbtns"></span>
   <button id="copy">Copy TSV</button>
   <a id="dl" class="btn" href="__XLSX_HREF__" download>&#8681; Download Excel (.xlsx)</a>
+  <span id="verbox"></span>
   <span id="count" style="color:var(--muted);font-size:12px"></span>
 </div>
 <table id="t"><thead><tr id="hrow">
@@ -81,7 +85,9 @@ function render() {
       const link = `(<a href="${esc(r.fileUrl)}" target="_blank" rel="noopener">${esc(r.file)}</a>)`;
       nameHtml = nameHtml.replace(`(${esc(r.file)})`, link);
     }
-    return `<tr data-p="${r.path}" class="${r.asm ? "asm" : ""}">
+    const cls = [r.asm ? "asm" : "", r.diff ? "chg" : ""].join(" ").trim();
+    const dtitle = r.diff ? ` title="${r.diff} vs previous version"` : "";
+    return `<tr data-p="${r.path}" class="${cls}"${dtitle}>
       <td class="tw" style="padding-left:${8 + pad}px">${tg}<span class="path">${r.path === "0" ? "TOP" : r.path}</span></td>
       <td class="pn">${esc(r.pn)}</td><td>${nameHtml}</td><td>${esc(r.desc)}</td>
       <td>${r.cots ? '<span class="badge">' + esc(r.cots) + "</span>" : ""}</td>
@@ -140,6 +146,23 @@ document.getElementById("copy").onclick = () => {
 // download button only renders when bomgen knew where the .xlsx lives
 const dl = document.getElementById("dl"); if (!dl.getAttribute("href")) dl.remove();
 render();
+// version dropdown: populated by an optional sibling versions.js written by
+// the Pages build (window.BOMGEN_VERSIONS). Absent (e.g. a single copied-out
+// HTML file, or history disabled) -> no dropdown, page fully functional.
+function verMenu() {
+  const V = window.BOMGEN_VERSIONS; if (!V || !V.versions?.length) return;
+  const sel = document.createElement("select");
+  sel.title = "View another tagged version";
+  for (const v of V.versions) {
+    const o = document.createElement("option");
+    o.value = v.href; o.textContent = v.label;
+    if (v.label === V.current) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => { if (sel.value) location.href = sel.value; };
+  document.getElementById("verbox").appendChild(sel);
+}
 </script>
+<script src="versions.js" onload="verMenu()"></script>
 </body>
 </html>
