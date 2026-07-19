@@ -320,6 +320,122 @@ def test_pdm_found_in_and_file():
         "?view=bom&file=NCC-FP005.SLDPRT")
 
 
+# ------------------------------------------------------------ budget / specs
+
+SPEC_CSV = ("Level,Qty,Number,Name,Rev,Specs,COTS\n"
+            "1,1,NCC-FA010.SLDASM,Weldment,1,SPEC-WELD-001,\n"
+            "1.1,4,NCC-FP020.SLDPRT,Plate,,,\n"
+            "2,3,NCC-FP030.SLDPRT,Bracket,2,SPEC-MACH-002,\n"
+            "3,1,NCC-FA011.SLDASM,Mount,,,\n"
+            "3.1,6,92423A111_Screw.SLDPRT,,,SPEC-HDWE-003,X\n"
+            "3.2,1,NCC-FP032.SLDPRT,Shim,,,\n"
+            "4,2,NCC-FP030.SLDPRT,Bracket,2,SPEC-MACH-002,\n"
+            "5,1,NCC-FP040.SLDPRT,MultiSpec,,SPEC-MACH-002; SPEC-WELD-001,\n")
+
+
+def _spec_rollup(tmp_path, csv_text=SPEC_CSV, cfg=None):
+    f = tmp_path / "spec.csv"
+    f.write_text(csv_text, encoding="utf-8")
+    cfg = cfg or bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(f)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    rollup = bomgen.budget_rollup(root, cfg, warnings, header)
+    return rollup, warnings
+
+
+def test_budget_rollup_semantics(tmp_path):
+    """Spec'd node covers its subtree; same part under one spec merges with
+    summed qty; leafs with no coverage land in unassigned; multi-spec uses
+    the first listed spec."""
+    rollup, warnings = _spec_rollup(tmp_path)
+    by_name = {s["name"]: s for s in rollup["specs"]}
+    assert set(by_name) == {"SPEC-WELD-001", "SPEC-MACH-002", "SPEC-HDWE-003"}
+    # weldment is one line; its Plate child is covered, NOT unassigned
+    weld = by_name["SPEC-WELD-001"]["lines"]
+    assert len(weld) == 1 and weld[0]["file"] == "NCC-FA010.SLDASM"
+    # bracket appears twice in the tree (qty 3 + 2) -> one merged line
+    mach = {l["file"]: l for l in by_name["SPEC-MACH-002"]["lines"]}
+    assert mach["NCC-FP030.SLDPRT"]["qty"] == 5
+    assert mach["NCC-FP030.SLDPRT"]["occ"] == 2
+    # multi-spec part landed under its FIRST spec
+    assert "NCC-FP040.SLDPRT" in mach
+    # shim is the only unassigned part
+    ufiles = [l["file"] for l in rollup["unassigned"]["lines"]]
+    assert ufiles == ["NCC-FP032.SLDPRT"]
+    assert rollup["counts"]["specs"] == 3
+    assert any(w.startswith("V10") for w in warnings)   # unassigned shim
+    assert any(w.startswith("V11") for w in warnings)   # multi-spec row
+
+
+def test_budget_specs_column_missing_warns(tmp_path):
+    csv = "Level,Qty,Number\n1,1,NCC-FA001.SLDASM\n1.1,2,NCC-FP001.SLDPRT\n"
+    rollup, warnings = _spec_rollup(tmp_path, csv_text=csv)
+    assert rollup["counts"]["specs"] == 0
+    assert any(w.startswith("V10") and "not in input" in w for w in warnings)
+
+
+def test_budget_nested_spec_warns(tmp_path):
+    csv = ("Level,Qty,Number,Specs\n"
+           "1,1,NCC-FA010.SLDASM,SPEC-WELD-001\n"
+           "1.1,2,NCC-FP099.SLDPRT,SPEC-HDWE-003\n")
+    rollup, warnings = _spec_rollup(tmp_path, csv_text=csv)
+    assert any(w.startswith("V12") for w in warnings)
+    # nested item still gets its own line under its own spec
+    names = {s["name"] for s in rollup["specs"]}
+    assert names == {"SPEC-WELD-001", "SPEC-HDWE-003"}
+
+
+def test_budget_spec_url_template(tmp_path):
+    cfg = bomgen.load_config(None)
+    cfg["links"]["spec_url_template"] = "https://docs.example.edu/{spec}"
+    rollup, _ = _spec_rollup(tmp_path, cfg=cfg)
+    urls = {s["name"]: s["url"] for s in rollup["specs"]}
+    assert urls["SPEC-MACH-002"] == "https://docs.example.edu/SPEC-MACH-002"
+
+
+def test_budget_workbook_structure(tmp_path):
+    rollup, warnings = _spec_rollup(tmp_path)
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "spec.csv", out, warnings,
+                             source_rev="abc1234")
+    import openpyxl
+    wb = openpyxl.load_workbook(out)
+    assert wb.sheetnames == ["Budget", "Parts"]
+    ps = wb["Parts"]
+    rows = [r for r in ps.iter_rows(min_row=2, max_col=6, values_only=True)
+            if r[0]]
+    # merged bracket line: qty 5 under SPEC-MACH-002
+    bracket = [r for r in rows if r[1] == "NCC-FP030-02"]
+    assert bracket and bracket[0][0] == "SPEC-MACH-002" and bracket[0][5] == 5
+    # unit-best + ext formulas present, and Budget sheet SUMIF-links Parts
+    assert ps["J2"].value.startswith("=IF(I2")
+    assert ps["N2"].value.startswith("=IF(J2")
+    bs = wb["Budget"]
+    cells = [c.value for row in bs.iter_rows() for c in row
+             if isinstance(c.value, str)]
+    assert any("SUMIF(Parts!$A:$A" in v for v in cells)
+    assert any(v == "TOTAL" for v in cells)
+    assert any("abc1234" in v for v in cells)           # provenance stamp
+
+
+def test_cli_budget_dashboard_outputs(tmp_path):
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    rc = bomgen.main([str(f), "--both", "--budget", "--dashboard",
+                      "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
+    assert (tmp_path / "spec_Budget.xlsx").exists()
+    # dashboard links its xlsx twin and the BOM page (relative siblings)
+    assert 'href="spec_Budget.xlsx"' in dash
+    assert 'href="spec_BOM.html"' in dash
+    # rollup data embedded; warnings banner present
+    assert "SPEC-MACH-002" in dash and 'id="warnbox"' in dash
+
+
 def test_pdm_found_in_missing_skips_link(tmp_path):
     """A {found_in} template + a row with no Found In -> no dead link."""
     csv = tmp_path / "nofoundin.csv"
@@ -330,6 +446,148 @@ def test_pdm_found_in_missing_skips_link(tmp_path):
     cfg["links"]["file_url_template"] = "https://pdm.example.edu/v/{found_in}"
     root, _ = parse(csv, cfg)
     assert all(n.file_url == "" for n in bomgen.preorder(root))
+
+
+# ------------------------------------------------------------ diff / historical
+
+DIFF_PREV = ("Level,Qty,Number,Name,Specs,Checked Out By\n"
+             "1,1,NCC-FA010.SLDASM,Weldment,SPEC-A,\n"
+             "1.1,2,NCC-FP030.SLDPRT,Bracket,,\n"
+             "2,1,NCC-FP050.SLDPRT,Gasket,,alice\n")
+DIFF_CUR = ("Level,Qty,Number,Name,Specs,Checked Out By\n"
+            "1,1,NCC-FA010.SLDASM,Weldment,SPEC-A,\n"
+            "1.1,3,NCC-FP030.SLDPRT,Bracket,,\n"
+            "3,1,NCC-FP060.SLDPRT,NewPart,,bob\n")
+
+
+def _diffed(tmp_path, prev_text, cur_text, cfg=None):
+    prev = tmp_path / "prev.csv"; prev.write_text(prev_text, encoding="utf-8")
+    cur = tmp_path / "cur.csv"; cur.write_text(cur_text, encoding="utf-8")
+    cfg = cfg or bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(cur)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    bomgen.apply_diff(root, prev, cfg, warnings)
+    return root, warnings
+
+
+def test_diff_changed_added_removed(tmp_path):
+    root, warnings = _diffed(tmp_path, DIFF_PREV, DIFF_CUR)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == "changed"   # qty 2 -> 3
+    assert idx["NCC-FP060.SLDPRT"].diff == "added"
+    assert idx["NCC-FA010.SLDASM"].diff == ""          # untouched
+    d = [w for w in warnings if w.startswith("DIFF")]
+    assert len(d) == 1 and "1 row(s) changed" in d[0] and "1 added" in d[0]
+    assert "NCC-FP050.SLDPRT" in d[0]                  # removed, in banner
+
+
+def test_diff_ignores_unmapped_and_configured_columns(tmp_path):
+    # only "Checked Out By" (unmapped churn) differs -> no change flagged
+    prev = DIFF_CUR.replace(",bob\n", ",carol\n")
+    root, warnings = _diffed(tmp_path, prev, DIFF_CUR)
+    assert all(n.diff == "" for n in bomgen.preorder(root))
+    assert not any(w.startswith("DIFF") for w in warnings)
+    # a mapped column can be excluded via [diff].ignore_columns
+    cfg = bomgen.load_config(None)
+    cfg["diff"]["ignore_columns"] = ["Qty"]
+    root, _ = _diffed(tmp_path, DIFF_PREV.replace(",alice\n", ",\n")
+                      .replace("2,1,NCC-FP050.SLDPRT,Gasket,,\n", ""),
+                      DIFF_CUR.replace("3,1,NCC-FP060.SLDPRT,NewPart,,bob\n", ""),
+                      cfg=cfg)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == ""          # qty diff ignored
+
+
+def test_diff_move_is_not_a_change(tmp_path):
+    prev = ("Level,Qty,Number,Name\n"
+            "1,1,NCC-FA010.SLDASM,Asm\n"
+            "1.1,2,NCC-FP030.SLDPRT,Bracket\n")
+    cur = ("Level,Qty,Number,Name\n"
+           "1,1,NCC-FA010.SLDASM,Asm\n"
+           "2,2,NCC-FP030.SLDPRT,Bracket\n")   # moved to top level, same data
+    root, warnings = _diffed(tmp_path, prev, cur)
+    idx = {n.filename: n for n in bomgen.preorder(root) if n.filename}
+    assert idx["NCC-FP030.SLDPRT"].diff == ""
+    assert not any(w.startswith("DIFF") for w in warnings)
+
+
+def test_diff_unreadable_prev_warns_not_aborts(tmp_path):
+    cur = tmp_path / "cur.csv"; cur.write_text(DIFF_CUR, encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(cur)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    bomgen.apply_diff(root, tmp_path / "nope.csv", cfg, warnings)
+    assert any(w.startswith("DIFF") and "skipped" in w for w in warnings)
+    assert all(n.diff == "" for n in bomgen.preorder(root))
+
+
+def test_cli_diff_and_historical(tmp_path):
+    prev = tmp_path / "prev.csv"; prev.write_text(DIFF_PREV, encoding="utf-8")
+    cur = tmp_path / "cur.csv"; cur.write_text(DIFF_CUR, encoding="utf-8")
+    rc = bomgen.main([str(cur), "--both", "--budget", "--dashboard",
+                      "--diff-against", str(prev),
+                      "--historical", "v0.2 (2026-07-01)",
+                      "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "cur_BOM.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in page and "Historical version v0.2" in page
+    assert '"diff": "changed"' in page and '"diff": "added"' in page
+    dash = (tmp_path / "cur_Dashboard.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in dash and '"diffed": true' in dash
+
+    import openpyxl
+    ws = openpyxl.load_workbook(tmp_path / "cur_BOM.xlsx").active
+    assert "HISTORICAL VERSION" in (ws["B1"].value or "")
+    # some data cell carries the green diff fill
+    greens = [c for row in ws.iter_rows() for c in row
+              if c.fill and c.fill.fgColor and c.fill.fgColor.rgb == "00E2EFDA"]
+    assert greens
+    wb = openpyxl.load_workbook(tmp_path / "cur_Budget.xlsx")
+    bcells = [c.value for row in wb["Budget"].iter_rows() for c in row
+              if isinstance(c.value, str)]
+    assert any("HISTORICAL VERSION" in v for v in bcells)
+    pgreens = [c for row in wb["Parts"].iter_rows() for c in row
+               if c.fill and c.fill.fgColor and c.fill.fgColor.rgb == "00E2EFDA"]
+    assert pgreens
+
+
+def test_build_pages_history_integration(tmp_path):
+    """End-to-end: a git repo with two tags -> per-tag pages, versions.js,
+    yellow chrome on tags only, skip-safe."""
+    import subprocess, os
+    repo = tmp_path / "repo"; repo.mkdir()
+    env = {**os.environ, "PYTHONPATH": str(REPO), "BUILD_HISTORY": "1",
+           "BOMGEN": "python -m bomgen",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e.c",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@e.c"}
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, env=env, check=True,
+                       capture_output=True)
+    git("init", "-q")
+    (repo / "bom.csv").write_text(DIFF_PREV, encoding="utf-8")
+    git("add", "-A"); git("commit", "-qm", "one"); git("tag", "t1")
+    (repo / "bom.csv").write_text(DIFF_CUR, encoding="utf-8")
+    git("add", "-A"); git("commit", "-qm", "two"); git("tag", "t2")
+    r = subprocess.run(["bash", str(REPO / "scripts" / "build_pages.sh"),
+                        "bom.csv", str(REPO / "bomgen.toml"), "site"],
+                       cwd=repo, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    site = repo / "site"
+    assert (site / "index.html").exists()
+    assert (site / "v" / "t1" / "index.html").exists()
+    assert (site / "v" / "t2" / "index.html").exists()
+    assert "t2" in (site / "versions.js").read_text()
+    t2 = (site / "v" / "t2" / "index.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' in t2                       # yellow on tag page
+    assert '"diff": "changed"' in t2                  # diffed vs t1
+    cur = (site / "index.html").read_text(encoding="utf-8")
+    assert 'id="histbar"' not in cur                  # current not yellow
+    v2 = (site / "v" / "t2" / "versions.js").read_text()
+    assert '"../../index.html"' in v2                 # relative root link
 
 
 # ------------------------------------------------------------ materials (Stage B)

@@ -52,6 +52,7 @@ DEFAULT_CONFIG = {
         "found_in": "Found In",
         "cots": "COTS",
         "material": "Material",
+        "specs": "Specs",
         "passthrough": [],
     },
     "rules": {
@@ -73,6 +74,9 @@ DEFAULT_CONFIG = {
         # e.g. "D:\\Steward_Obs_PDM" so the web URL base can supply the vault
         # root. A leading drive letter is dropped automatically regardless.
         "found_in_strip": "",
+        # URL template for linking a spec document on the budget dashboard;
+        # "{spec}" -> the (URL-encoded) spec reference. Empty -> no links.
+        "spec_url_template": "",
     },
     "materials": {
         # Enrich rows with properties from a committed materials-database
@@ -83,6 +87,23 @@ DEFAULT_CONFIG = {
         "properties": [],              # DB property keys to show as columns
         "show_units": True,            # "2700 kg/m3" vs bare "2700"
         "labels": {},                  # property_key -> column header override
+    },
+    "diff": {
+        # Change-highlighting vs a previous version of the export
+        # (--diff-against). Only columns that flow into the report are
+        # compared (mapped + passthrough), so PDM churn like "Checked Out
+        # By" never lights a row green; list report columns here to exclude
+        # them from the comparison too.
+        "ignore_columns": [],
+    },
+    "budget": {
+        # Spec/RFQ budget rollup (--budget / --dashboard outputs). Parts are
+        # flagged into procurement categories by the spec-document reference
+        # in the column mapped by columns.specs; a cell may list several
+        # separated by spec_separator (the first is the category used for
+        # cost rollup). A spec'd node covers its whole subtree; leaf parts
+        # under no spec are reported as unassigned.
+        "spec_separator": ";",
     },
 }
 
@@ -122,6 +143,9 @@ class BomNode:
     state: str = ""
     file_url: str = ""
     material_props: dict = field(default_factory=dict)
+    specs: list = field(default_factory=list)  # spec refs listed on this row
+    spec: str = ""                             # primary (first) spec ref
+    diff: str = ""                             # ""|"changed"|"added" vs prev
 
 
 class ValidationError(Exception):
@@ -382,6 +406,7 @@ def derive(root: BomNode, cfg: dict) -> None:
     links = cfg.get("links", {})
     url_tmpl = links.get("file_url_template", "")
     found_in_strip = links.get("found_in_strip", "")
+    spec_sep = cfg.get("budget", {}).get("spec_separator", ";")
 
     def visit(n: BomNode):
         if n.parent is not None:
@@ -406,6 +431,11 @@ def derive(root: BomNode, cfg: dict) -> None:
                     url_tmpl, n.raw.get(col["found_in"]), found_in_strip,
                     n.filename)
             n.cots = (n.raw.get(col["cots"]) or "").strip()
+            raw_specs = (n.raw.get(col["specs"]) or "").strip()
+            if raw_specs:
+                n.specs = [s.strip() for s in raw_specs.split(spec_sep)
+                           if s.strip()]
+                n.spec = n.specs[0] if n.specs else ""
             if rules["state_from_found_in"]:
                 fi = (n.raw.get(col["found_in"]) or "").replace("/", "\\")
                 parts = [s for s in fi.split("\\") if s]
@@ -521,6 +551,355 @@ def enrich_materials(root: BomNode, cfg: dict, warnings: list[str]) -> None:
             "— re-export the materials JSON or check the Material names")
 
 
+# --------------------------------------------------------------------------- diff
+
+def _row_signature(n: BomNode, cfg: dict) -> dict:
+    """The comparable content of a row: only columns that flow into the
+    report (mapped + passthrough), minus [diff].ignore_columns — so PDM
+    churn in unmapped metadata never counts as a change. Level/position is
+    deliberately excluded: a move is not a content change."""
+    col = cfg["columns"]
+    ignore = set(cfg.get("diff", {}).get("ignore_columns", []))
+    keys = [col[k] for k in ("qty", "name", "config", "rev", "description",
+                              "found_in", "cots", "material", "specs")
+            if col.get(k)]
+    keys += list(col.get("passthrough", []))
+    return {k: (n.raw.get(k) or "").strip() for k in keys if k not in ignore}
+
+
+def _diff_index(root: BomNode) -> dict:
+    """(parent filename, filename, occurrence#) -> node, for identity
+    matching that survives item renumbering (never keyed on Level path)."""
+    idx: dict = {}
+    counts: dict = {}
+    def walk(n: BomNode):
+        for c in n.children:
+            base = (n.filename, c.filename)
+            occ = counts.get(base, 0)
+            counts[base] = occ + 1
+            idx[(n.filename, c.filename, occ)] = c
+            walk(c)
+    walk(root)
+    return idx
+
+
+def apply_diff(root: BomNode, prev_path: Path, cfg: dict,
+               warnings: list[str]) -> None:
+    """Mark each node changed/added vs a previous version of the export
+    (n.diff), and summarize removals in the warning banner. The previous
+    file is parsed with a throwaway warnings list — its own parse issues
+    belong to its own build, not this one. Unreadable/invalid previous
+    file -> DIFF warning and no highlighting, never an abort."""
+    try:
+        throwaway: list[str] = []
+        if prev_path.suffix.lower() == ".xml":
+            p_header, p_rows = read_xml(prev_path, cfg, throwaway)
+        else:
+            p_header, p_rows = read_csv(prev_path)
+        prev_root = build_tree(p_header, p_rows, cfg, throwaway)
+        derive(prev_root, cfg)
+    except (SystemExit, ValidationError, OSError) as e:
+        warnings.append(f"DIFF: previous version '{prev_path}' could not be "
+                        f"parsed ({e}); change highlighting skipped")
+        return
+
+    prev_idx = _diff_index(prev_root)
+    consumed: set = set()
+    changed = added = 0
+
+    # fallback pool for moved parts: filename -> [keys] not yet matched
+    by_file: dict = {}
+    for k in prev_idx:
+        by_file.setdefault(k[1], []).append(k)
+
+    def match(key):
+        if key in prev_idx and key not in consumed:
+            consumed.add(key)
+            return prev_idx[key]
+        # moved: same filename under a different parent / occurrence
+        for k in by_file.get(key[1], []):
+            if k not in consumed:
+                consumed.add(k)
+                return prev_idx[k]
+        return None
+
+    cur_idx = _diff_index(root)
+    for key, n in cur_idx.items():
+        prev_n = match(key)
+        if prev_n is None:
+            n.diff = "added"
+            added += 1
+        elif _row_signature(n, cfg) != _row_signature(prev_n, cfg):
+            n.diff = "changed"
+            changed += 1
+
+    cur_files = {n.filename for n in preorder(root) if n.filename}
+    removed = sorted({k[1] for k in prev_idx
+                      if k not in consumed and k[1] not in cur_files})
+    if changed or added or removed:
+        msg = (f"DIFF: vs previous version: {changed} row(s) changed, "
+               f"{added} added (highlighted green)")
+        if removed:
+            msg += (f"; {len(removed)} part(s) removed "
+                    f"(e.g. {', '.join(removed[:3])})")
+        warnings.append(msg)
+
+
+# --------------------------------------------------------------------------- budget
+
+UNASSIGNED = "(unassigned)"
+
+
+def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
+                  header: list[str] | None = None) -> dict:
+    """Group the BOM into RFQ/procurement categories keyed by spec document.
+
+    Semantics (see design §5.4): a node carrying a spec reference is a budget
+    line item, and its whole subtree is considered covered by that line (a
+    quoted weldment includes its pieces). Leaf parts under no spec'd ancestor
+    and with no spec of their own land in UNASSIGNED so budget gaps are
+    visible, not silent. Identical parts (same filename) under the same spec
+    merge into one line with summed total quantity.
+    Warnings: V10 specs column missing / parts unassigned, V11 multi-spec
+    cells (only the first is used for cost rollup), V12 spec'd items nested
+    inside another spec'd subtree (possible double-count).
+    """
+    col = cfg["columns"]
+    spec_url_tmpl = cfg.get("links", {}).get("spec_url_template", "")
+    groups: dict[str, dict] = {}
+    multi: dict[str, int] = {}
+    nested: dict[str, int] = {}
+    unassigned_parts: dict[str, int] = {}
+
+    def add_line(spec: str, n: BomNode) -> None:
+        g = groups.setdefault(spec, {"name": spec, "url": "", "lines": {}})
+        key = n.filename or n.part_number or n.path
+        line = g["lines"].get(key)
+        if line is None:
+            g["lines"][key] = {
+                "pn": n.part_number, "name": n.display_name,
+                "file": n.filename, "fileUrl": n.file_url,
+                "cots": n.cots,
+                "config": (n.raw.get(col["config"]) or "").strip(),
+                "asm": n.is_assembly,
+                "qty": n.qty_total, "occ": 1, "diff": n.diff,
+            }
+        else:
+            line["qty"] += n.qty_total
+            line["occ"] += 1
+            if n.diff and not line["diff"]:
+                line["diff"] = n.diff
+
+    def visit(n: BomNode, covering: str) -> None:
+        if n.parent is not None:
+            if n.spec:
+                if len(n.specs) > 1:
+                    multi[n.filename or n.path] = len(n.specs)
+                if covering:
+                    nested[n.filename or n.path] = 1
+                add_line(n.spec, n)
+                covering = n.spec
+            elif not covering and not n.children:
+                add_line(UNASSIGNED, n)
+                unassigned_parts[n.filename or n.path] = 1
+        for c in n.children:
+            visit(c, covering)
+
+    visit(root, "")
+
+    if header is not None and col["specs"] not in header:
+        warnings.append(
+            f"V10: specs column '{col['specs']}' not in input; every part is "
+            "unassigned — add the column in the PDM export or map "
+            "columns.specs in the config")
+    elif unassigned_parts:
+        examples = ", ".join(sorted(unassigned_parts)[:3])
+        warnings.append(
+            f"V10: {len(unassigned_parts)} part(s) not covered by any spec "
+            f"(e.g. {examples}) — listed under {UNASSIGNED} in the budget")
+    if multi:
+        examples = ", ".join(sorted(multi)[:3])
+        warnings.append(
+            f"V11: {len(multi)} row(s) list multiple specs (e.g. {examples}); "
+            "only the first is used for the cost rollup")
+    if nested:
+        examples = ", ".join(sorted(nested)[:3])
+        warnings.append(
+            f"V12: {len(nested)} spec'd item(s) nested inside another spec'd "
+            f"subtree (e.g. {examples}) — check for double-counted cost")
+
+    specs_out = []
+    for name in sorted(k for k in groups if k != UNASSIGNED):
+        g = groups[name]
+        lines = list(g["lines"].values())
+        if spec_url_tmpl:
+            g["url"] = spec_url_tmpl.replace("{spec}", quote(name, safe=""))
+        specs_out.append({"name": name, "url": g["url"], "lines": lines,
+                          "totalQty": sum(l["qty"] for l in lines)})
+    ug = groups.get(UNASSIGNED, {"lines": {}})
+    ulines = list(ug["lines"].values())
+    return {
+        "specs": specs_out,
+        "unassigned": {"name": UNASSIGNED, "url": "", "lines": ulines,
+                        "totalQty": sum(l["qty"] for l in ulines)},
+        "counts": {
+            "specs": len(specs_out),
+            "lines": sum(len(s["lines"]) for s in specs_out),
+            "unassignedLines": len(ulines),
+            "totalQty": sum(s["totalQty"] for s in specs_out)
+                        + sum(l["qty"] for l in ulines),
+            "changed": sum(1 for s in specs_out for l in s["lines"]
+                           if l.get("diff"))
+                       + sum(1 for l in ulines if l.get("diff")),
+        },
+    }
+
+
+DIFF_GREEN = "E2EFDA"  # light green fill for rows changed/added vs previous
+HIST_YELLOW = "FFF3C4"
+
+
+def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
+                      warnings: list[str] | None = None,
+                      source_rev: str = "", historical: str = "") -> None:
+    """Budget workbook: sheet "Budget" = per-spec rollup driven by live
+    SUMIF/COUNTIF formulas over sheet "Parts", the costing template where
+    unit WAG / ROM / Quote get typed in (shaded input columns). Ext costs and
+    the Best chain (Quote > ROM > WAG) are formulas, so the workbook keeps
+    rolling up as estimates mature — the point of the template. (This is a
+    working costing sheet, unlike the static BOM report; formulas are
+    deliberate here.)"""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    fontname = cfg["output"]["excel_font"]
+    proj = cfg["project"]
+    F = lambda size, bold=False: Font(name=fontname, size=size, bold=bold)
+    input_fill = PatternFill("solid", fgColor="E8F0E8")
+    head_border = Border(bottom=Side(style="medium"))
+    money = "$#,##0.00"
+
+    wb = openpyxl.Workbook()
+
+    # ---------------- Parts sheet (the costing template)
+    ps = wb.create_sheet("Parts")
+    p_headers = ["Spec", "Part Number", "Part Name", "Config", "COTS",
+                 "Qty (Total)", "Unit WAG", "Unit ROM", "Unit Quote",
+                 "Unit Best", "Ext WAG", "Ext ROM", "Ext Quote", "Ext Best"]
+    for j, h in enumerate(p_headers, 1):
+        c = ps.cell(row=1, column=j, value=h)
+        c.font, c.border = F(11, True), head_border
+    r = 2
+    all_groups = rollup["specs"] + ([rollup["unassigned"]]
+                                    if rollup["unassigned"]["lines"] else [])
+    for g in all_groups:
+        for line in g["lines"]:
+            ps.cell(row=r, column=1, value=g["name"])
+            ps.cell(row=r, column=2, value=line["pn"])
+            ps.cell(row=r, column=3, value=line["name"])
+            ps.cell(row=r, column=4, value=line["config"])
+            ps.cell(row=r, column=5, value=line["cots"])
+            ps.cell(row=r, column=6, value=line["qty"])
+            for cidx in (7, 8, 9):  # unit cost inputs
+                cell = ps.cell(row=r, column=cidx)
+                cell.fill, cell.number_format = input_fill, money
+            ps.cell(row=r, column=10,
+                    value=f'=IF(I{r}<>"",I{r},IF(H{r}<>"",H{r},'
+                          f'IF(G{r}<>"",G{r},"")))')
+            ps.cell(row=r, column=11, value=f'=IF(G{r}<>"",$F{r}*G{r},"")')
+            ps.cell(row=r, column=12, value=f'=IF(H{r}<>"",$F{r}*H{r},"")')
+            ps.cell(row=r, column=13, value=f'=IF(I{r}<>"",$F{r}*I{r},"")')
+            ps.cell(row=r, column=14, value=f'=IF(J{r}<>"",$F{r}*J{r},"")')
+            for cidx in range(10, 15):
+                ps.cell(row=r, column=cidx).number_format = money
+            for cidx in range(1, 15):
+                ps.cell(row=r, column=cidx).font = F(11)
+            if line.get("diff"):  # changed/added vs previous version
+                green = PatternFill("solid", fgColor=DIFF_GREEN)
+                for cidx in (1, 2, 3, 4, 5, 6):  # data cells, not cost inputs
+                    ps.cell(row=r, column=cidx).fill = green
+            r += 1
+    p_last = r - 1
+    for j, w in enumerate([22, 24, 52, 14, 7, 11, 10, 10, 10, 10,
+                            12, 12, 12, 12], 1):
+        ps.column_dimensions[get_column_letter(j)].width = w
+    ps.freeze_panes = "A2"
+    ps.auto_filter.ref = f"A1:N{max(p_last, 1)}"
+
+    # ---------------- Budget sheet (rollup by spec, formula-linked)
+    bs = wb.active
+    bs.title = "Budget"
+    t = bs.cell(row=1, column=1, value="Hardware Budget by Specification")
+    t.font = F(16, True)
+    meta = f"{proj['title_line']} · from {src_name}"
+    if source_rev:
+        meta += f" · rev {source_rev}"
+    meta += f" · generated {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    bs.cell(row=2, column=1, value=meta).font = F(9)
+    bs.cell(row=3, column=1,
+            value="Enter unit costs on the Parts sheet (shaded WAG/ROM/Quote "
+                  "columns); every figure here rolls up live. Best = Quote, "
+                  "else ROM, else WAG.").font = F(9)
+    if historical:
+        h = bs.cell(row=5, column=1,
+                    value=f"⚠ HISTORICAL VERSION — {historical}")
+        h.font = Font(name=fontname, size=11, bold=True, color="7A4E00")
+        h.fill = PatternFill("solid", fgColor=HIST_YELLOW)
+        bs.merge_cells(start_row=5, start_column=1, end_row=5, end_column=8)
+    if warnings:
+        wcell = bs.cell(row=4, column=1, value="⚠ " + " · ".join(
+            banner_lines(warnings)))
+        wcell.font = Font(name=fontname, size=9, color="7A4E00")
+        wcell.fill = PatternFill("solid", fgColor="FFF3C4")
+        bs.merge_cells(start_row=4, start_column=1, end_row=4, end_column=8)
+        wcell.alignment = Alignment(wrap_text=True, vertical="top")
+        bs.row_dimensions[4].height = max(15, 12 * len(banner_lines(warnings)))
+
+    b_headers = ["Spec", "Line Items", "Total Qty", "Ext WAG", "Ext ROM",
+                 "Ext Quote", "Ext Best", "Spec Document"]
+    hrow = 6
+    for j, h in enumerate(b_headers, 1):
+        c = bs.cell(row=hrow, column=j, value=h)
+        c.font, c.border = F(11, True), head_border
+    r = hrow + 1
+    names = [g["name"] for g in all_groups]
+    for name in names:
+        bs.cell(row=r, column=1, value=name).font = F(11, True)
+        bs.cell(row=r, column=2, value=f'=COUNTIF(Parts!$A:$A,A{r})')
+        bs.cell(row=r, column=3, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$F:$F)')
+        bs.cell(row=r, column=4, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$K:$K)')
+        bs.cell(row=r, column=5, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$L:$L)')
+        bs.cell(row=r, column=6, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$M:$M)')
+        bs.cell(row=r, column=7, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$N:$N)')
+        for j in range(4, 8):
+            bs.cell(row=r, column=j).number_format = money
+        for j in range(2, 8):
+            bs.cell(row=r, column=j).font = F(11)
+        url = next((g["url"] for g in all_groups if g["name"] == name), "")
+        if url:
+            c = bs.cell(row=r, column=8, value=url)
+            c.hyperlink, c.font = url, Font(name=fontname, size=10,
+                                            color="0563C1",
+                                            underline="single")
+        r += 1
+    tr = bs.cell(row=r, column=1, value="TOTAL")
+    tr.font = F(12, True)
+    first_data = hrow + 1
+    for j, letter in ((2, "B"), (3, "C"), (4, "D"), (5, "E"), (6, "F"),
+                      (7, "G")):
+        c = bs.cell(row=r, column=j,
+                    value=f"=SUM({letter}{first_data}:{letter}{r - 1})")
+        c.font = F(12, True)
+        if j >= 4:
+            c.number_format = money
+    for j, w in enumerate([26, 11, 10, 13, 13, 13, 13, 40], 1):
+        bs.column_dimensions[get_column_letter(j)].width = w
+    bs.freeze_panes = f"A{hrow + 1}"
+
+    wb.save(out)
+
+
 # --------------------------------------------------------------------------- excel
 
 BANNER_MAX = 8  # warnings shown in the data-quality banner before "+N more"
@@ -534,7 +913,8 @@ def banner_lines(warnings: list[str]) -> list[str]:
 
 
 def write_excel(root: BomNode, cfg: dict, out: Path,
-                warnings: list[str] | None = None, source_rev: str = "") -> None:
+                warnings: list[str] | None = None, source_rev: str = "",
+                historical: str = "") -> None:
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -587,6 +967,14 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
         for row in range(2, 6):
             ws.row_dimensions[row].height = max(15, est * 15 / 4 + 2)
 
+    # ---- historical marker (row 1 is blank in the template)
+    if historical:
+        h = ws["B1"]
+        h.value = f"⚠ HISTORICAL VERSION — {historical}"
+        h.font = Font(name=fontname, size=12, bold=True, color="7A4E00")
+        h.fill = PatternFill("solid", fgColor=HIST_YELLOW)
+        ws.merge_cells(f"B1:{L(total_cols - 1)}1")
+
     # ---- title block
     def put(row, text, size=14, bold=True):
         c = ws[f"B{row}"]
@@ -637,10 +1025,14 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
                 n.qty, n.qty_total] + [
                     (n.raw.get(p) or "").strip() for p in passthrough] + [
                     n.material_props.get(p, "") for p in mat_props]
+        diff_fill = (PatternFill("solid", fgColor=DIFF_GREEN)
+                     if n.diff else None)
         for j, v in enumerate(vals):
             c = ws[f"{L(n_mark + j)}{r}"]
             c.value = v
             c.font = F(14 if n.depth == 0 else 11, n.is_assembly)
+            if diff_fill:
+                c.fill = diff_fill
         if n.file_url:
             # Part Name is logical column index 2; make the whole cell a
             # hyperlink to the PDM viewer (xlsx can't link a substring).
@@ -671,7 +1063,8 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
 
 def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                warnings: list[str], xlsx_href: str = "",
-               source_rev: str = "") -> None:
+               source_rev: str = "", historical: str = "",
+               current_href: str = "../../index.html") -> None:
     """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
     download button is removed client-side). When publishing to GitHub or
     GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
@@ -695,18 +1088,10 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
         "desc": (n.raw.get(cfg["columns"]["description"]) or "").strip(),
         "cots": n.cots, "qty": n.qty, "qtyTotal": n.qty_total,
         "state": n.state, "asm": n.is_assembly,
-        "file": n.filename, "fileUrl": n.file_url,
+        "file": n.filename, "fileUrl": n.file_url, "diff": n.diff,
         "extra": [(n.raw.get(p) or "").strip() for p in passthrough]
                  + [n.material_props.get(p, "") for p in mat_props],
     } for n in nodes]
-
-    if warnings:
-        items = "".join(f"<li>{html.escape(w)}</li>"
-                        for w in banner_lines(warnings))
-        warnbox = ('<div id="warnbox"><strong>&#9888; Data quality warnings '
-                   f"— verify before use:</strong><ul>{items}</ul></div>")
-    else:
-        warnbox = ""
 
     tmpl = Path(__file__).with_name("template.html").read_text(encoding="utf-8")
     page = (tmpl
@@ -722,7 +1107,63 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
             .replace("__SOURCE_REV__",
                      f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
-            .replace("__WARNBOX__", warnbox))
+            .replace("__HISTORICAL__", _historical_html(historical, current_href))
+            .replace("__WARNBOX__", _warnbox_html(warnings)))
+    out.write_text(page, encoding="utf-8")
+
+
+def _historical_html(label: str, current_href: str) -> str:
+    """Yellow page chrome for pages built from a non-current (tagged)
+    version: tint the background and pin an alert bar linking to current."""
+    if not label:
+        return ""
+    return (
+        "<style>body{background:#fdf3d0}#controls{background:#fdf3d0}"
+        "header{border-bottom-color:#b98900}</style>"
+        '<div id="histbar" style="background:#f5d76e;color:#4a3a00;'
+        "padding:8px 22px;font-weight:600;border-bottom:2px solid #b98900\">"
+        f"&#9888; Historical version {html.escape(label)} — "
+        f'<a href="{html.escape(current_href, quote=True)}" '
+        'style="color:#4a3a00">view current</a></div>')
+
+
+def _warnbox_html(warnings: list[str]) -> str:
+    if not warnings:
+        return ""
+    items = "".join(f"<li>{html.escape(w)}</li>"
+                    for w in banner_lines(warnings))
+    return ('<div id="warnbox"><strong>&#9888; Data quality warnings '
+            f"— verify before use:</strong><ul>{items}</ul></div>")
+
+
+def write_dashboard(rollup: dict, cfg: dict, src_name: str, out: Path,
+                    warnings: list[str], budget_href: str = "",
+                    bom_href: str = "", source_rev: str = "",
+                    historical: str = "",
+                    current_href: str = "../../dashboard.html") -> None:
+    """Spec/RFQ budget dashboard: one self-contained page (same packaging as
+    the BOM report) rolling the BOM up by spec document — stat tiles, a
+    collapsible group per spec with its line items, filtering, and a download
+    button for the budget .xlsx twin (relative sibling href, same rule as the
+    BOM page's Excel button). Costs live in the workbook, not here — the
+    dashboard shows the structural rollup the costs hang off."""
+    proj = cfg["project"]
+    tmpl = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+    page = (tmpl
+            .replace("/*__DATA__*/", json.dumps(rollup, ensure_ascii=False))
+            .replace("__TITLE__", html.escape(proj["title_line"]))
+            .replace("__SYSTEM__", html.escape(proj["system_name"]))
+            .replace("__ASSY__", html.escape(proj["assembly_number"]))
+            .replace("__CONTACT__", html.escape(
+                " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
+            .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
+            .replace("__SOURCE__", html.escape(src_name))
+            .replace("__SOURCE_REV__",
+                     f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
+            .replace("__BUDGET_XLSX_HREF__", html.escape(budget_href, quote=True))
+            .replace("__BOM_HREF__", html.escape(bom_href, quote=True))
+            .replace("__HISTORICAL__", _historical_html(historical, current_href))
+            .replace("__WARNBOX__", _warnbox_html(warnings)))
     out.write_text(page, encoding="utf-8")
 
 
@@ -747,6 +1188,21 @@ def main(argv=None) -> int:
                     help="raw materials-database export (/export/raw-json) to "
                          "enrich rows from; overrides [materials].cache_file and "
                          "implies enabled=true for this run")
+    ap.add_argument("--budget", type=Path, nargs="?", const=True, default=None,
+                    help="write the spec/RFQ budget workbook (rollup sheet + "
+                         "WAG/ROM/Quote costing template with live formulas)")
+    ap.add_argument("--dashboard", type=Path, nargs="?", const=True, default=None,
+                    help="write the spec/RFQ budget dashboard page (rollup of "
+                         "parts grouped by spec document)")
+    ap.add_argument("--diff-against", type=Path, default=None, metavar="PREV",
+                    help="previous version of the input (extracted by the "
+                         "caller, e.g. via git show) — rows changed/added "
+                         "since it are highlighted green in every output; "
+                         "removed parts are summarized in the banner")
+    ap.add_argument("--historical", default="", metavar="LABEL",
+                    help="mark the generated pages as a historical version "
+                         "(yellow chrome + banner linking to current); LABEL "
+                         "is typically the git tag, e.g. 'v0.3 (2026-07-01)'")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -763,10 +1219,16 @@ def main(argv=None) -> int:
         print(f"bomgen: validation errors:\n{e}", file=sys.stderr)
         return 1
     derive(root, cfg)
+    if a.diff_against is not None:
+        apply_diff(root, a.diff_against, cfg, warnings)
     if a.materials_cache is not None:
         cfg["materials"]["enabled"] = True
         cfg["materials"]["cache_file"] = str(a.materials_cache)
     enrich_materials(root, cfg, warnings)
+    rollup = (budget_rollup(root, cfg, warnings, header)
+              if (a.budget or a.dashboard) else None)
+    if rollup is not None:
+        rollup["diffed"] = a.diff_against is not None
 
     if not a.quiet:
         for w in warnings:
@@ -776,9 +1238,12 @@ def main(argv=None) -> int:
     stem = a.input.stem
     did = False
     xlsx_out: Path | None = None
+    html_out: Path | None = None
+    budget_out: Path | None = None
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
-        write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev)
+        write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev,
+                    historical=a.historical)
         did = True
         if not a.quiet:
             print(f"wrote {xlsx_out}")
@@ -792,12 +1257,36 @@ def main(argv=None) -> int:
                         and xlsx_out.resolve().parent == p.resolve().parent)
             href = xlsx_out.name if same_dir else ""
         write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
-                  source_rev=a.source_rev)
+                  source_rev=a.source_rev, historical=a.historical)
+        html_out = p
+        did = True
+        if not a.quiet:
+            print(f"wrote {p}")
+    if a.budget:
+        budget_out = (a.budget if isinstance(a.budget, Path)
+                      else a.outdir / f"{stem}_Budget.xlsx")
+        write_budget_xlsx(rollup, cfg, a.input.name, budget_out, warnings,
+                          source_rev=a.source_rev, historical=a.historical)
+        did = True
+        if not a.quiet:
+            print(f"wrote {budget_out}")
+    if a.dashboard:
+        p = (a.dashboard if isinstance(a.dashboard, Path)
+             else a.outdir / f"{stem}_Dashboard.html")
+        # relative sibling links, same rule as the BOM page's xlsx button
+        def sibling(target: Path | None) -> str:
+            return (target.name if target is not None
+                    and target.resolve().parent == p.resolve().parent else "")
+        write_dashboard(rollup, cfg, a.input.name, p, warnings,
+                        budget_href=sibling(budget_out),
+                        bom_href=sibling(html_out),
+                        source_rev=a.source_rev, historical=a.historical)
         did = True
         if not a.quiet:
             print(f"wrote {p}")
     if not did:
-        print("bomgen: nothing to do (use --xlsx, --html, or --both)", file=sys.stderr)
+        print("bomgen: nothing to do (use --xlsx, --html, --both, --budget, "
+              "or --dashboard)", file=sys.stderr)
         return 2
     return 0
 

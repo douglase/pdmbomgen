@@ -24,4 +24,4 @@ Repository = "https://github.com/douglase/pdmbomgen"
 packages = ["bomgen"]
 
 [tool.setuptools.package-data]
-bomgen = ["template.html"]
+bomgen = ["template.html", "dashboard.html"]

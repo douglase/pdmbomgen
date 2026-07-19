@@ -31,6 +31,25 @@ state_from_found_in = true
 [output]
 excel_font = "Aptos Narrow"
 
+[diff]
+# Change highlighting (--diff-against): only report columns (mapped +
+# passthrough) are compared, so unmapped PDM churn like "Checked Out By"
+# never flags a row. List report columns here to exclude them too:
+# ignore_columns = ["Rev"]
+ignore_columns = []
+
+[budget]
+# Spec/RFQ budget rollup (bomgen --budget / --dashboard). Parts are flagged
+# into procurement categories via a spec-document reference column in the
+# PDM export — mapped by [columns] specs = "Specs" (adjustable, like every
+# column). A cell may list several references separated by spec_separator;
+# the FIRST is the category used for cost rollup. A spec'd row covers its
+# whole subtree (a quoted weldment includes its piece parts); leaf parts
+# under no spec are reported as (unassigned) so budget gaps stay visible.
+spec_separator = ";"
+# To link spec references to their controlled documents on the dashboard,
+# set in [links]:  spec_url_template = "https://docs.example.edu/{spec}"
+
 [links]
 # Make each filename in the report a clickable link to your PDM web viewer.
 # Placeholders in the template (URL-encoded on substitution):

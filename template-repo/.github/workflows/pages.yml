@@ -9,6 +9,7 @@ name: Publish BOM to GitHub Pages
 on:
   push:
     branches: [main]
+    tags: ["*"]   # pushing a tag republishes immediately with the new version
   workflow_dispatch: {}
   schedule:
     - cron: "0 6 * * 1"   # every Monday 06:00 UTC — picks up upstream pdmbomgen fixes
@@ -18,6 +19,13 @@ on:
 env:
   BOM_INPUT: vault/PLACEHOLDER_pdmout.csv
   BOM_CONFIG: bomgen.toml
+  # Every git tag is rebuilt with the CURRENT generator on every run (so
+  # dashboard improvements retroactively apply to all historical source
+  # data — no compiled branch). Tag pages get yellow historical chrome, a
+  # version dropdown, and green change-highlighting vs the previous tag.
+  BUILD_HISTORY: "1"
+  # Spec/RFQ budget dashboard + workbook; needs a specs column (bomgen.toml)
+  BUILD_DASHBOARD: "0"
 
 permissions:
   contents: read

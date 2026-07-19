@@ -276,6 +276,82 @@ site root: index.html (HTML report) + <stem>_BOM.xlsx  ← button target
 
 Step-by-step service setup: `PAGES_SETUP.md`.
 
+### 5.4 Spec/RFQ budget outputs (`--budget`, `--dashboard`) *(D11)*
+
+Parts are flagged into procurement categories by a **spec-document
+reference** carried in a column of the export (mapped via `columns.specs`,
+default header `Specs` — adjustable like every column; a cell may list
+several refs separated by `[budget].spec_separator`, and the **first** is
+the category used for cost rollup, V11 warning on the rest).
+
+**Coverage semantics** (`budget_rollup()`): a node carrying a spec is a
+budget **line item**, and its whole subtree is covered by that line — a
+quoted weldment includes its piece parts. Identical parts (same filename)
+under the same spec merge into one line with summed `qty_total` and a use
+count. Leaf parts under no spec'd ancestor land in **(unassigned)** so
+budget gaps are visible, never silent (V10). A spec'd item nested inside
+another spec'd subtree is allowed but flagged (V12 — possible double-count).
+
+Two outputs, both optional and off unless requested:
+
+- **Budget workbook** (`write_budget_xlsx`): sheet *Budget* = one row per
+  spec, `COUNTIF`/`SUMIF`-linked to sheet *Parts* — the costing template
+  where unit **WAG / ROM / Quote** are typed into shaded input columns.
+  `Unit Best = Quote, else ROM, else WAG`; extended costs are
+  `qty × unit` formulas, so the workbook keeps rolling up as estimates
+  mature. **Deliberate exception to the no-formulas rule** of the BOM
+  report (§5.1) — this is a working costing sheet, not a static snapshot.
+  Spec-document hyperlinks via `[links].spec_url_template` (`{spec}`).
+- **Dashboard** (`bomgen/dashboard.html`, same self-contained packaging as
+  the BOM page): stat tiles (specs / line items / total qty / unassigned),
+  one collapsible group per spec with a single-hue quantity bar, live
+  filter, the shared yellow warning banner, and relative sibling links to
+  the budget workbook and the BOM page (same rule as the Excel download
+  button, D5). Costs are *not* on the dashboard — they live in the
+  workbook; the page shows the structural rollup the costs hang off.
+
+CI: `scripts/build_pages.sh` publishes both when `BUILD_DASHBOARD=1`
+(opt-in so spec-less repos don't get a permanent V10 warning).
+
+### 5.5 Change highlighting & historical tagged views *(D12)*
+
+**Change highlighting** (`--diff-against PREV`): rows whose content changed
+or that were added since a previous version of the export are highlighted
+**green** in every output — BOM HTML, BOM xlsx, dashboard line items, and
+the budget workbook's Parts sheet (owner choice: everywhere). Removed parts
+can't be highlighted (no row), so they're summarized in the warning banner
+(`DIFF:` line). Semantics:
+
+- **Row identity is never the Level path** (renumbering isn't change):
+  match by filename within the same parent, falling back to
+  filename-anywhere for moved parts — a **move with identical content is
+  not a change**.
+- **Only report columns are compared** (mapped + passthrough), so PDM
+  churn in unmapped metadata (e.g. `Checked Out By`) never lights a row;
+  `[diff].ignore_columns` can exclude report columns too.
+- bomgen stays VCS-agnostic (same pattern as `--source-rev`): the caller
+  extracts the previous file (`git show`); an unreadable previous file is
+  a warning, never an abort.
+
+**Historical tagged views** (`BUILD_HISTORY=1` in `build_pages.sh`): every
+git tag is rebuilt on every run **with the current generator** — dashboard
+improvements retroactively apply to all historical source data, and no
+compiled branch exists. Each tag's pages land in `OUTDIR/v/<tag>/`, built
+from that tag's own CSV + config. Failed/incomplete tags are skipped with
+a warning, never blocking current publishing.
+
+- **Diff baselines are hybrid** (owner decision): the current page diffs
+  against the previous commit touching the input; each tag page diffs
+  against the **previous tag** ("what changed in this release").
+- **Yellow historical chrome** (`--historical LABEL`): tag pages tint the
+  background yellow and pin an alert bar linking back to current; the
+  xlsx outputs get a yellow "HISTORICAL VERSION" cell.
+- **Version dropdown**: the build writes a `versions.js` (relative hrefs
+  only — works at any hosting root and on `file://`) into every page
+  directory; pages load it as an *optional* sibling script. A single
+  copied-out HTML file simply has no dropdown and is otherwise fully
+  functional — the self-contained guarantee is preserved.
+
 ---
 
 ## 6. Configuration (`bomgen.toml`)
@@ -330,6 +406,9 @@ Config lookup order: `--config PATH` → `./bomgen.toml` → built-in defaults.
 | V7 | cell holds an unresolved SolidWorks property expression (`SW-*@…`, e.g. `SW-Mass@.SLDPRT`) instead of an evaluated value — the file was never rebuilt/saved after the property was linked | warning, grouped per column with a count (fix in CAD, not in bomgen) |
 | V8 | materials enrichment enabled but the configured cache file is missing/unreadable | warning (properties left blank; feature otherwise off) |
 | V9 | a row's Material is not found in the materials-database export | warning, grouped with a count + examples (re-export the JSON or fix the name) |
+| V10 | budget requested but the specs column is missing, or leaf parts are covered by no spec | warning (parts land in "(unassigned)" — budget gaps visible, not silent) |
+| V11 | a row lists multiple spec references | warning (only the first is used for cost rollup) |
+| V12 | a spec'd item nested inside another spec'd subtree | warning (possible double-counted cost) |
 | R1 | duplicate dotted path repaired by re-appending zeros ("2.1"→"2.10") iff result equals next expected sibling — recovers Excel float-mangling of two-segment item numbers | warning (export direct from PDM to avoid entirely) |
 
 Errors abort before writing outputs. Warnings print to stderr **and render
@@ -423,6 +502,22 @@ See `template-repo/SETUP.md` for the bootstrap steps.
   side (`/export/solidworks` → `.sldmat` imported into the CAD material
   library → properties flow through PDM as ordinary columns, needing no
   bomgen change).
+- **Historical / tagged views** — ~~future~~ **implemented 2026-07-19**
+  (D12, §5.5). Original owner-specified design, kept for the record:
+  1. **Change highlighting**: when a row's content differs between the
+     current CSV and the same file at the *previous git commit*, highlight
+     that row **green** in the generated pages, so evolution is visible at
+     a glance. (Needs the caller to supply the prior CSV — same
+     VCS-agnostic pattern as `--source-rev`; bomgen diffs two files, git
+     stays in the build script.)
+  2. **Tagged-version pages**: CI rebuilds the site for **every git tag**
+     on each run (tags recompiled with the *current* generator, so
+     dashboard improvements retroactively apply to all historical source
+     data — no compiled branch needed). Each tag's pages land in a
+     subdirectory; a **dropdown menu** on every page lists the tags.
+  3. **Historical alert**: pages generated from a non-current tag switch
+     the page chrome to **yellow** so the reader knows they're looking at
+     a historical version.
 
 ## Decision log
 | ID | Date | Decision |
@@ -437,3 +532,5 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 | D8 | 2026-07-13 | `--source-rev` CLI flag: opaque provenance string (typically a git commit hash, computed by the caller — bomgen stays VCS-agnostic) embedded in both outputs, so a compiled report says which commit of the source CSV/XML it reflects. Backs the `template-repo/` vault-repo pattern (§8.1). |
 | D9 | 2026-07-15 | Filenames link to a PDM web viewer. `[links].file_url_template` takes `{found_in}` (the Found In vault path → URL tail; the leading `<drive>:\<Vault>\` is auto-stripped for any drive letter, backslashes → "/", `found_in_strip` overrides) and/or `{file}` (the SolidWorks filename), each URL-encoded. HTML linkifies the filename inside the Part Name; Excel makes the Part Name cell a hyperlink (xlsx can't link a substring). Empty template (default) = no links, unchanged output. Host/vault base is project-configured, never hardcoded. |
 | D10 | 2026-07-17 | Material-property enrichment (Stage B of `MATERIALS_DB_PLAN.md`). New `[materials]` config reads a committed materials-database `/export/raw-json` dump from **local disk** (never the network — keeps CI/HTML network-free) and appends chosen properties as columns, matched by Material name/synonym. `enrich_materials()` runs after `derive()`; `material_cache_key()` is the shared match contract. Off by default; missing file → V8, unmatched material → grouped V9; never aborts. The out-of-repo sync (Stage A) is unneeded when the dump is committed directly. |
+| D11 | 2026-07-19 | Spec/RFQ budget outputs (§5.4): parts categorized by a spec-document reference column (`columns.specs`, adjustable; multi-ref cells split on `[budget].spec_separator`, first wins). A spec'd node covers its subtree; uncovered leaf parts land in "(unassigned)" (V10), multi-spec V11, nested-spec V12. Budget workbook = SUMIF-linked rollup + WAG/ROM/Quote costing template (**deliberate formulas exception** to §5.1's no-formulas rule); dashboard = self-contained rollup page. CI publishing opt-in via BUILD_DASHBOARD=1. |
+| D12 | 2026-07-19 | Historical phase (§5.5): `--diff-against` green change-highlighting in **all** outputs (row identity by filename-within-parent, never Level path; report-columns-only comparison + `[diff].ignore_columns`; moves are not changes; removed parts summarized in banner). Hybrid baselines: current page vs previous commit, tag pages vs previous tag. `BUILD_HISTORY=1` rebuilds every git tag with the current generator into `v/<tag>/` (skip-on-fail), `--historical` yellow chrome, and a per-directory `versions.js` dropdown loaded as an optional sibling script so single-file copies stay fully functional. |
