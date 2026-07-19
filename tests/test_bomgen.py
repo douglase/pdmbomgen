@@ -320,6 +320,122 @@ def test_pdm_found_in_and_file():
         "?view=bom&file=NCC-FP005.SLDPRT")
 
 
+# ------------------------------------------------------------ budget / specs
+
+SPEC_CSV = ("Level,Qty,Number,Name,Rev,Specs,COTS\n"
+            "1,1,NCC-FA010.SLDASM,Weldment,1,SPEC-WELD-001,\n"
+            "1.1,4,NCC-FP020.SLDPRT,Plate,,,\n"
+            "2,3,NCC-FP030.SLDPRT,Bracket,2,SPEC-MACH-002,\n"
+            "3,1,NCC-FA011.SLDASM,Mount,,,\n"
+            "3.1,6,92423A111_Screw.SLDPRT,,,SPEC-HDWE-003,X\n"
+            "3.2,1,NCC-FP032.SLDPRT,Shim,,,\n"
+            "4,2,NCC-FP030.SLDPRT,Bracket,2,SPEC-MACH-002,\n"
+            "5,1,NCC-FP040.SLDPRT,MultiSpec,,SPEC-MACH-002; SPEC-WELD-001,\n")
+
+
+def _spec_rollup(tmp_path, csv_text=SPEC_CSV, cfg=None):
+    f = tmp_path / "spec.csv"
+    f.write_text(csv_text, encoding="utf-8")
+    cfg = cfg or bomgen.load_config(None)
+    warnings = []
+    header, rows = bomgen.read_csv(f)
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    rollup = bomgen.budget_rollup(root, cfg, warnings, header)
+    return rollup, warnings
+
+
+def test_budget_rollup_semantics(tmp_path):
+    """Spec'd node covers its subtree; same part under one spec merges with
+    summed qty; leafs with no coverage land in unassigned; multi-spec uses
+    the first listed spec."""
+    rollup, warnings = _spec_rollup(tmp_path)
+    by_name = {s["name"]: s for s in rollup["specs"]}
+    assert set(by_name) == {"SPEC-WELD-001", "SPEC-MACH-002", "SPEC-HDWE-003"}
+    # weldment is one line; its Plate child is covered, NOT unassigned
+    weld = by_name["SPEC-WELD-001"]["lines"]
+    assert len(weld) == 1 and weld[0]["file"] == "NCC-FA010.SLDASM"
+    # bracket appears twice in the tree (qty 3 + 2) -> one merged line
+    mach = {l["file"]: l for l in by_name["SPEC-MACH-002"]["lines"]}
+    assert mach["NCC-FP030.SLDPRT"]["qty"] == 5
+    assert mach["NCC-FP030.SLDPRT"]["occ"] == 2
+    # multi-spec part landed under its FIRST spec
+    assert "NCC-FP040.SLDPRT" in mach
+    # shim is the only unassigned part
+    ufiles = [l["file"] for l in rollup["unassigned"]["lines"]]
+    assert ufiles == ["NCC-FP032.SLDPRT"]
+    assert rollup["counts"]["specs"] == 3
+    assert any(w.startswith("V10") for w in warnings)   # unassigned shim
+    assert any(w.startswith("V11") for w in warnings)   # multi-spec row
+
+
+def test_budget_specs_column_missing_warns(tmp_path):
+    csv = "Level,Qty,Number\n1,1,NCC-FA001.SLDASM\n1.1,2,NCC-FP001.SLDPRT\n"
+    rollup, warnings = _spec_rollup(tmp_path, csv_text=csv)
+    assert rollup["counts"]["specs"] == 0
+    assert any(w.startswith("V10") and "not in input" in w for w in warnings)
+
+
+def test_budget_nested_spec_warns(tmp_path):
+    csv = ("Level,Qty,Number,Specs\n"
+           "1,1,NCC-FA010.SLDASM,SPEC-WELD-001\n"
+           "1.1,2,NCC-FP099.SLDPRT,SPEC-HDWE-003\n")
+    rollup, warnings = _spec_rollup(tmp_path, csv_text=csv)
+    assert any(w.startswith("V12") for w in warnings)
+    # nested item still gets its own line under its own spec
+    names = {s["name"] for s in rollup["specs"]}
+    assert names == {"SPEC-WELD-001", "SPEC-HDWE-003"}
+
+
+def test_budget_spec_url_template(tmp_path):
+    cfg = bomgen.load_config(None)
+    cfg["links"]["spec_url_template"] = "https://docs.example.edu/{spec}"
+    rollup, _ = _spec_rollup(tmp_path, cfg=cfg)
+    urls = {s["name"]: s["url"] for s in rollup["specs"]}
+    assert urls["SPEC-MACH-002"] == "https://docs.example.edu/SPEC-MACH-002"
+
+
+def test_budget_workbook_structure(tmp_path):
+    rollup, warnings = _spec_rollup(tmp_path)
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "spec.csv", out, warnings,
+                             source_rev="abc1234")
+    import openpyxl
+    wb = openpyxl.load_workbook(out)
+    assert wb.sheetnames == ["Budget", "Parts"]
+    ps = wb["Parts"]
+    rows = [r for r in ps.iter_rows(min_row=2, max_col=6, values_only=True)
+            if r[0]]
+    # merged bracket line: qty 5 under SPEC-MACH-002
+    bracket = [r for r in rows if r[1] == "NCC-FP030-02"]
+    assert bracket and bracket[0][0] == "SPEC-MACH-002" and bracket[0][5] == 5
+    # unit-best + ext formulas present, and Budget sheet SUMIF-links Parts
+    assert ps["J2"].value.startswith("=IF(I2")
+    assert ps["N2"].value.startswith("=IF(J2")
+    bs = wb["Budget"]
+    cells = [c.value for row in bs.iter_rows() for c in row
+             if isinstance(c.value, str)]
+    assert any("SUMIF(Parts!$A:$A" in v for v in cells)
+    assert any(v == "TOTAL" for v in cells)
+    assert any("abc1234" in v for v in cells)           # provenance stamp
+
+
+def test_cli_budget_dashboard_outputs(tmp_path):
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    rc = bomgen.main([str(f), "--both", "--budget", "--dashboard",
+                      "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
+    assert (tmp_path / "spec_Budget.xlsx").exists()
+    # dashboard links its xlsx twin and the BOM page (relative siblings)
+    assert 'href="spec_Budget.xlsx"' in dash
+    assert 'href="spec_BOM.html"' in dash
+    # rollup data embedded; warnings banner present
+    assert "SPEC-MACH-002" in dash and 'id="warnbox"' in dash
+
+
 def test_pdm_found_in_missing_skips_link(tmp_path):
     """A {found_in} template + a row with no Found In -> no dead link."""
     csv = tmp_path / "nofoundin.csv"

@@ -5,6 +5,9 @@
 # .gitlab-ci.yml) — see SETUP.md.
 #
 # Usage: scripts/build_pages.sh INPUT.{csv|xml} [CONFIG.toml] [OUTDIR]
+# Set BUILD_DASHBOARD=1 (e.g. in the CI variables) to also publish the
+# spec/RFQ budget dashboard + budget workbook (needs a specs column in the
+# export — see bomgen.toml [budget]).
 #
 # Requires full git history (not a shallow clone) so `git log -1 -- INPUT`
 # finds the real last commit touching INPUT, not just HEAD. Both CI configs
@@ -25,12 +28,19 @@ if [ -z "$rev" ]; then
 fi
 echo "source revision: $rev"
 
+extra=()
+if [ "${BUILD_DASHBOARD:-0}" = "1" ]; then
+    extra=(--dashboard "$outdir/dashboard.html"
+           --budget "$outdir/${stem}_Budget.xlsx")
+fi
+
 mkdir -p "$outdir"
 # `bomgen` is the console-script entry point installed from requirements.txt
 bomgen "$input" -c "$config" \
     --html "$outdir/index.html" \
     --xlsx "$outdir/${stem}_BOM.xlsx" \
-    --source-rev "$rev"
+    --source-rev "$rev" \
+    "${extra[@]}"
 
 echo "site built in $outdir/:"
 ls -l "$outdir"

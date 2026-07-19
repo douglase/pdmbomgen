@@ -1,0 +1,147 @@
+<!-- SPDX-License-Identifier: MIT
+     SPDX-FileCopyrightText: 2026 E Douglas, University of Arizona and contributors -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__ASSY__ — Hardware Budget by Spec</title>
+<style>
+:root{--line:#d8d4cc;--muted:#7a756b;--accent:#1a4d7c;--asm:#f3efe8;--hit:#fff3c4}
+*{box-sizing:border-box}
+body{font:14px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;margin:0;color:#22201c;background:#fbfaf7}
+header{padding:18px 22px 10px;border-bottom:2px solid var(--accent)}
+header h1{margin:0;font-size:20px}
+header .meta{color:var(--muted);font-size:12.5px;margin-top:4px}
+button,a.btn{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer;color:inherit;text-decoration:none;display:inline-block}
+button:hover,a.btn:hover{border-color:var(--accent);color:var(--accent)}
+#warnbox{margin:10px 22px;padding:10px 14px;background:var(--hit);border:1px solid #e3b341;border-left:5px solid #b98900;border-radius:6px;color:#6b4a00;font-size:13px}
+#warnbox ul{margin:6px 0 0;padding-left:20px}
+#warnbox li{margin:2px 0}
+#tiles{display:flex;flex-wrap:wrap;gap:12px;padding:14px 22px 4px}
+.tile{flex:1 1 150px;max-width:230px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.tile .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.tile .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.tile.warn .v{color:#8a5a00}
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 22px;position:sticky;top:0;background:#fbfaf7;border-bottom:1px solid var(--line);z-index:2}
+#controls input{flex:1 1 220px;max-width:340px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+tr.spec>td{background:var(--asm);font-weight:600;cursor:pointer}
+tr.spec.unassigned>td{background:var(--hit)}
+tr.hit>td{background:var(--hit)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.pn{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.tg{display:inline-block;width:1.1em;cursor:pointer;user-select:none;color:var(--accent)}
+.badge{display:inline-block;padding:0 6px;border-radius:9px;background:#dbe8f4;color:var(--accent);font-size:11px;font-weight:600}
+.share{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px;min-width:2px}
+.sharewrap{white-space:nowrap}
+.muted{color:var(--muted);font-size:11.5px}
+footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
+@media print{#controls{display:none}tr{display:table-row!important}body{background:#fff}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Hardware Budget by Spec — __ASSY__</h1>
+  <div class="meta">__TITLE__ · __SYSTEM__ · __CONTACT__</div>
+  <div class="meta">Generated __GENERATED__ from <code>__SOURCE__</code> by bomgen__SOURCE_REV__</div>
+</header>
+__WARNBOX__
+<div id="tiles"></div>
+<div id="controls">
+  <input id="q" type="search" placeholder="Filter parts / specs…">
+  <button data-x="all">Expand all</button>
+  <button data-x="none">Collapse all</button>
+  <a id="dlb" class="btn" href="__BUDGET_XLSX_HREF__" download>&#8681; Budget workbook (.xlsx)</a>
+  <a id="bom" class="btn" href="__BOM_HREF__">&#8598; Full BOM</a>
+  <span id="count" class="muted"></span>
+</div>
+<table id="t"><thead><tr>
+  <th>Spec / Part Number</th><th>Part Name</th><th>Config</th><th>COTS</th>
+  <th>Qty (Total)</th><th>Uses</th>
+</tr></thead><tbody id="tb"></tbody></table>
+<footer>Costs are entered and rolled up in the budget workbook — this page shows
+what each spec covers. Static snapshot; regenerate from PDM for current data.</footer>
+<script>
+const DATA = /*__DATA__*/;
+const groups = DATA.specs.concat(DATA.unassigned.lines.length ? [DATA.unassigned] : []);
+groups.forEach(g => g.open = true);
+const maxQty = Math.max(1, ...groups.map(g => g.totalQty));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// stat tiles
+const tiles = [
+  {v: DATA.counts.specs, l: "Specs"},
+  {v: DATA.counts.lines, l: "RFQ line items"},
+  {v: DATA.counts.totalQty, l: "Total part qty"},
+  {v: DATA.counts.unassignedLines, l: "Unassigned parts", warn: DATA.counts.unassignedLines > 0},
+];
+document.getElementById("tiles").innerHTML = tiles.map(t =>
+  `<div class="tile${t.warn ? " warn" : ""}"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join("");
+
+const tb = document.getElementById("tb");
+function render() {
+  tb.innerHTML = groups.map((g, gi) => {
+    const un = g.name === "(unassigned)";
+    const bar = `<span class="sharewrap"><span class="share" style="width:${Math.round(70 * g.totalQty / maxQty)}px"></span></span>`;
+    const doc = g.url ? ` <a href="${esc(g.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">spec doc</a>` : "";
+    const head = `<tr class="spec${un ? " unassigned" : ""}" data-g="${gi}">
+      <td colspan="2"><span class="tg">${g.open ? "▾" : "▸"}</span>${esc(g.name)}${doc}</td>
+      <td class="muted" colspan="2">${g.lines.length} item${g.lines.length === 1 ? "" : "s"}</td>
+      <td class="num">${bar}${g.totalQty}</td><td></td></tr>`;
+    const rows = g.lines.map((l, li) => {
+      const file = l.fileUrl
+        ? `<a href="${esc(l.fileUrl)}" target="_blank" rel="noopener">${esc(l.file)}</a>` : esc(l.file);
+      const nm = l.file && l.name.endsWith(`(${l.file})`)
+        ? esc(l.name.slice(0, -l.file.length - 2)) + `(${file})` : esc(l.name);
+      return `<tr data-g="${gi}" data-l="${li}" class="line">
+        <td class="pn" style="padding-left:26px">${esc(l.pn)}</td>
+        <td>${nm}</td><td class="pn">${esc(l.config)}</td>
+        <td>${l.cots ? '<span class="badge">' + esc(l.cots) + "</span>" : ""}</td>
+        <td class="num">${l.qty}</td>
+        <td class="num muted">${l.occ > 1 ? l.occ + "×" : ""}</td></tr>`;
+    }).join("");
+    return head + rows;
+  }).join("");
+  applyVisibility();
+}
+const hay = l => [l.pn, l.name, l.file, l.config, l.cots].join(" ").toLowerCase();
+function applyVisibility() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let shown = 0, total = 0;
+  for (const tr of tb.rows) {
+    const g = groups[+tr.dataset.g];
+    if (tr.classList.contains("spec")) {
+      const anyHit = !q || g.name.toLowerCase().includes(q) || g.lines.some(l => hay(l).includes(q));
+      tr.style.display = anyHit ? "" : "none";
+      continue;
+    }
+    total++;
+    const l = g.lines[+tr.dataset.l];
+    const hit = q && (hay(l).includes(q) || g.name.toLowerCase().includes(q));
+    const ok = q ? hit : g.open;
+    tr.style.display = ok ? "" : "none";
+    tr.classList.toggle("hit", !!q && hit);
+    if (ok) shown++;
+  }
+  document.getElementById("count").textContent = `${shown}/${total} line items`;
+}
+tb.addEventListener("click", e => {
+  const tr = e.target.closest("tr.spec"); if (!tr) return;
+  const g = groups[+tr.dataset.g]; g.open = !g.open; render();
+});
+document.querySelectorAll("[data-x]").forEach(b => b.onclick = () => {
+  groups.forEach(g => g.open = b.dataset.x === "all"); render();
+});
+document.getElementById("q").addEventListener("input", applyVisibility);
+// buttons remove themselves when bomgen had no target to link
+for (const id of ["dlb", "bom"]) {
+  const a = document.getElementById(id);
+  if (!a.getAttribute("href")) a.remove();
+}
+render();
+</script>
+</body>
+</html>

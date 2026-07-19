@@ -52,6 +52,7 @@ DEFAULT_CONFIG = {
         "found_in": "Found In",
         "cots": "COTS",
         "material": "Material",
+        "specs": "Specs",
         "passthrough": [],
     },
     "rules": {
@@ -73,6 +74,9 @@ DEFAULT_CONFIG = {
         # e.g. "D:\\Steward_Obs_PDM" so the web URL base can supply the vault
         # root. A leading drive letter is dropped automatically regardless.
         "found_in_strip": "",
+        # URL template for linking a spec document on the budget dashboard;
+        # "{spec}" -> the (URL-encoded) spec reference. Empty -> no links.
+        "spec_url_template": "",
     },
     "materials": {
         # Enrich rows with properties from a committed materials-database
@@ -83,6 +87,15 @@ DEFAULT_CONFIG = {
         "properties": [],              # DB property keys to show as columns
         "show_units": True,            # "2700 kg/m3" vs bare "2700"
         "labels": {},                  # property_key -> column header override
+    },
+    "budget": {
+        # Spec/RFQ budget rollup (--budget / --dashboard outputs). Parts are
+        # flagged into procurement categories by the spec-document reference
+        # in the column mapped by columns.specs; a cell may list several
+        # separated by spec_separator (the first is the category used for
+        # cost rollup). A spec'd node covers its whole subtree; leaf parts
+        # under no spec are reported as unassigned.
+        "spec_separator": ";",
     },
 }
 
@@ -122,6 +135,8 @@ class BomNode:
     state: str = ""
     file_url: str = ""
     material_props: dict = field(default_factory=dict)
+    specs: list = field(default_factory=list)  # spec refs listed on this row
+    spec: str = ""                             # primary (first) spec ref
 
 
 class ValidationError(Exception):
@@ -382,6 +397,7 @@ def derive(root: BomNode, cfg: dict) -> None:
     links = cfg.get("links", {})
     url_tmpl = links.get("file_url_template", "")
     found_in_strip = links.get("found_in_strip", "")
+    spec_sep = cfg.get("budget", {}).get("spec_separator", ";")
 
     def visit(n: BomNode):
         if n.parent is not None:
@@ -406,6 +422,11 @@ def derive(root: BomNode, cfg: dict) -> None:
                     url_tmpl, n.raw.get(col["found_in"]), found_in_strip,
                     n.filename)
             n.cots = (n.raw.get(col["cots"]) or "").strip()
+            raw_specs = (n.raw.get(col["specs"]) or "").strip()
+            if raw_specs:
+                n.specs = [s.strip() for s in raw_specs.split(spec_sep)
+                           if s.strip()]
+                n.spec = n.specs[0] if n.specs else ""
             if rules["state_from_found_in"]:
                 fi = (n.raw.get(col["found_in"]) or "").replace("/", "\\")
                 parts = [s for s in fi.split("\\") if s]
@@ -519,6 +540,242 @@ def enrich_materials(root: BomNode, cfg: dict, warnings: list[str]) -> None:
             f"V9: {total} row(s) reference {len(misses)} material(s) not found "
             f"in the materials database (e.g. {examples}); properties left blank "
             "— re-export the materials JSON or check the Material names")
+
+
+# --------------------------------------------------------------------------- budget
+
+UNASSIGNED = "(unassigned)"
+
+
+def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
+                  header: list[str] | None = None) -> dict:
+    """Group the BOM into RFQ/procurement categories keyed by spec document.
+
+    Semantics (see design §5.4): a node carrying a spec reference is a budget
+    line item, and its whole subtree is considered covered by that line (a
+    quoted weldment includes its pieces). Leaf parts under no spec'd ancestor
+    and with no spec of their own land in UNASSIGNED so budget gaps are
+    visible, not silent. Identical parts (same filename) under the same spec
+    merge into one line with summed total quantity.
+    Warnings: V10 specs column missing / parts unassigned, V11 multi-spec
+    cells (only the first is used for cost rollup), V12 spec'd items nested
+    inside another spec'd subtree (possible double-count).
+    """
+    col = cfg["columns"]
+    spec_url_tmpl = cfg.get("links", {}).get("spec_url_template", "")
+    groups: dict[str, dict] = {}
+    multi: dict[str, int] = {}
+    nested: dict[str, int] = {}
+    unassigned_parts: dict[str, int] = {}
+
+    def add_line(spec: str, n: BomNode) -> None:
+        g = groups.setdefault(spec, {"name": spec, "url": "", "lines": {}})
+        key = n.filename or n.part_number or n.path
+        line = g["lines"].get(key)
+        if line is None:
+            g["lines"][key] = {
+                "pn": n.part_number, "name": n.display_name,
+                "file": n.filename, "fileUrl": n.file_url,
+                "cots": n.cots,
+                "config": (n.raw.get(col["config"]) or "").strip(),
+                "asm": n.is_assembly,
+                "qty": n.qty_total, "occ": 1,
+            }
+        else:
+            line["qty"] += n.qty_total
+            line["occ"] += 1
+
+    def visit(n: BomNode, covering: str) -> None:
+        if n.parent is not None:
+            if n.spec:
+                if len(n.specs) > 1:
+                    multi[n.filename or n.path] = len(n.specs)
+                if covering:
+                    nested[n.filename or n.path] = 1
+                add_line(n.spec, n)
+                covering = n.spec
+            elif not covering and not n.children:
+                add_line(UNASSIGNED, n)
+                unassigned_parts[n.filename or n.path] = 1
+        for c in n.children:
+            visit(c, covering)
+
+    visit(root, "")
+
+    if header is not None and col["specs"] not in header:
+        warnings.append(
+            f"V10: specs column '{col['specs']}' not in input; every part is "
+            "unassigned — add the column in the PDM export or map "
+            "columns.specs in the config")
+    elif unassigned_parts:
+        examples = ", ".join(sorted(unassigned_parts)[:3])
+        warnings.append(
+            f"V10: {len(unassigned_parts)} part(s) not covered by any spec "
+            f"(e.g. {examples}) — listed under {UNASSIGNED} in the budget")
+    if multi:
+        examples = ", ".join(sorted(multi)[:3])
+        warnings.append(
+            f"V11: {len(multi)} row(s) list multiple specs (e.g. {examples}); "
+            "only the first is used for the cost rollup")
+    if nested:
+        examples = ", ".join(sorted(nested)[:3])
+        warnings.append(
+            f"V12: {len(nested)} spec'd item(s) nested inside another spec'd "
+            f"subtree (e.g. {examples}) — check for double-counted cost")
+
+    specs_out = []
+    for name in sorted(k for k in groups if k != UNASSIGNED):
+        g = groups[name]
+        lines = list(g["lines"].values())
+        if spec_url_tmpl:
+            g["url"] = spec_url_tmpl.replace("{spec}", quote(name, safe=""))
+        specs_out.append({"name": name, "url": g["url"], "lines": lines,
+                          "totalQty": sum(l["qty"] for l in lines)})
+    ug = groups.get(UNASSIGNED, {"lines": {}})
+    ulines = list(ug["lines"].values())
+    return {
+        "specs": specs_out,
+        "unassigned": {"name": UNASSIGNED, "url": "", "lines": ulines,
+                        "totalQty": sum(l["qty"] for l in ulines)},
+        "counts": {
+            "specs": len(specs_out),
+            "lines": sum(len(s["lines"]) for s in specs_out),
+            "unassignedLines": len(ulines),
+            "totalQty": sum(s["totalQty"] for s in specs_out)
+                        + sum(l["qty"] for l in ulines),
+        },
+    }
+
+
+def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
+                      warnings: list[str] | None = None,
+                      source_rev: str = "") -> None:
+    """Budget workbook: sheet "Budget" = per-spec rollup driven by live
+    SUMIF/COUNTIF formulas over sheet "Parts", the costing template where
+    unit WAG / ROM / Quote get typed in (shaded input columns). Ext costs and
+    the Best chain (Quote > ROM > WAG) are formulas, so the workbook keeps
+    rolling up as estimates mature — the point of the template. (This is a
+    working costing sheet, unlike the static BOM report; formulas are
+    deliberate here.)"""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    fontname = cfg["output"]["excel_font"]
+    proj = cfg["project"]
+    F = lambda size, bold=False: Font(name=fontname, size=size, bold=bold)
+    input_fill = PatternFill("solid", fgColor="E8F0E8")
+    head_border = Border(bottom=Side(style="medium"))
+    money = "$#,##0.00"
+
+    wb = openpyxl.Workbook()
+
+    # ---------------- Parts sheet (the costing template)
+    ps = wb.create_sheet("Parts")
+    p_headers = ["Spec", "Part Number", "Part Name", "Config", "COTS",
+                 "Qty (Total)", "Unit WAG", "Unit ROM", "Unit Quote",
+                 "Unit Best", "Ext WAG", "Ext ROM", "Ext Quote", "Ext Best"]
+    for j, h in enumerate(p_headers, 1):
+        c = ps.cell(row=1, column=j, value=h)
+        c.font, c.border = F(11, True), head_border
+    r = 2
+    all_groups = rollup["specs"] + ([rollup["unassigned"]]
+                                    if rollup["unassigned"]["lines"] else [])
+    for g in all_groups:
+        for line in g["lines"]:
+            ps.cell(row=r, column=1, value=g["name"])
+            ps.cell(row=r, column=2, value=line["pn"])
+            ps.cell(row=r, column=3, value=line["name"])
+            ps.cell(row=r, column=4, value=line["config"])
+            ps.cell(row=r, column=5, value=line["cots"])
+            ps.cell(row=r, column=6, value=line["qty"])
+            for cidx in (7, 8, 9):  # unit cost inputs
+                cell = ps.cell(row=r, column=cidx)
+                cell.fill, cell.number_format = input_fill, money
+            ps.cell(row=r, column=10,
+                    value=f'=IF(I{r}<>"",I{r},IF(H{r}<>"",H{r},'
+                          f'IF(G{r}<>"",G{r},"")))')
+            ps.cell(row=r, column=11, value=f'=IF(G{r}<>"",$F{r}*G{r},"")')
+            ps.cell(row=r, column=12, value=f'=IF(H{r}<>"",$F{r}*H{r},"")')
+            ps.cell(row=r, column=13, value=f'=IF(I{r}<>"",$F{r}*I{r},"")')
+            ps.cell(row=r, column=14, value=f'=IF(J{r}<>"",$F{r}*J{r},"")')
+            for cidx in range(10, 15):
+                ps.cell(row=r, column=cidx).number_format = money
+            for cidx in range(1, 15):
+                ps.cell(row=r, column=cidx).font = F(11)
+            r += 1
+    p_last = r - 1
+    for j, w in enumerate([22, 24, 52, 14, 7, 11, 10, 10, 10, 10,
+                            12, 12, 12, 12], 1):
+        ps.column_dimensions[get_column_letter(j)].width = w
+    ps.freeze_panes = "A2"
+    ps.auto_filter.ref = f"A1:N{max(p_last, 1)}"
+
+    # ---------------- Budget sheet (rollup by spec, formula-linked)
+    bs = wb.active
+    bs.title = "Budget"
+    t = bs.cell(row=1, column=1, value="Hardware Budget by Specification")
+    t.font = F(16, True)
+    meta = f"{proj['title_line']} · from {src_name}"
+    if source_rev:
+        meta += f" · rev {source_rev}"
+    meta += f" · generated {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    bs.cell(row=2, column=1, value=meta).font = F(9)
+    bs.cell(row=3, column=1,
+            value="Enter unit costs on the Parts sheet (shaded WAG/ROM/Quote "
+                  "columns); every figure here rolls up live. Best = Quote, "
+                  "else ROM, else WAG.").font = F(9)
+    if warnings:
+        wcell = bs.cell(row=4, column=1, value="⚠ " + " · ".join(
+            banner_lines(warnings)))
+        wcell.font = Font(name=fontname, size=9, color="7A4E00")
+        wcell.fill = PatternFill("solid", fgColor="FFF3C4")
+        bs.merge_cells(start_row=4, start_column=1, end_row=4, end_column=8)
+        wcell.alignment = Alignment(wrap_text=True, vertical="top")
+        bs.row_dimensions[4].height = max(15, 12 * len(banner_lines(warnings)))
+
+    b_headers = ["Spec", "Line Items", "Total Qty", "Ext WAG", "Ext ROM",
+                 "Ext Quote", "Ext Best", "Spec Document"]
+    hrow = 6
+    for j, h in enumerate(b_headers, 1):
+        c = bs.cell(row=hrow, column=j, value=h)
+        c.font, c.border = F(11, True), head_border
+    r = hrow + 1
+    names = [g["name"] for g in all_groups]
+    for name in names:
+        bs.cell(row=r, column=1, value=name).font = F(11, True)
+        bs.cell(row=r, column=2, value=f'=COUNTIF(Parts!$A:$A,A{r})')
+        bs.cell(row=r, column=3, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$F:$F)')
+        bs.cell(row=r, column=4, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$K:$K)')
+        bs.cell(row=r, column=5, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$L:$L)')
+        bs.cell(row=r, column=6, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$M:$M)')
+        bs.cell(row=r, column=7, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$N:$N)')
+        for j in range(4, 8):
+            bs.cell(row=r, column=j).number_format = money
+        for j in range(2, 8):
+            bs.cell(row=r, column=j).font = F(11)
+        url = next((g["url"] for g in all_groups if g["name"] == name), "")
+        if url:
+            c = bs.cell(row=r, column=8, value=url)
+            c.hyperlink, c.font = url, Font(name=fontname, size=10,
+                                            color="0563C1",
+                                            underline="single")
+        r += 1
+    tr = bs.cell(row=r, column=1, value="TOTAL")
+    tr.font = F(12, True)
+    first_data = hrow + 1
+    for j, letter in ((2, "B"), (3, "C"), (4, "D"), (5, "E"), (6, "F"),
+                      (7, "G")):
+        c = bs.cell(row=r, column=j,
+                    value=f"=SUM({letter}{first_data}:{letter}{r - 1})")
+        c.font = F(12, True)
+        if j >= 4:
+            c.number_format = money
+    for j, w in enumerate([26, 11, 10, 13, 13, 13, 13, 40], 1):
+        bs.column_dimensions[get_column_letter(j)].width = w
+    bs.freeze_panes = f"A{hrow + 1}"
+
+    wb.save(out)
 
 
 # --------------------------------------------------------------------------- excel
@@ -700,14 +957,6 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                  + [n.material_props.get(p, "") for p in mat_props],
     } for n in nodes]
 
-    if warnings:
-        items = "".join(f"<li>{html.escape(w)}</li>"
-                        for w in banner_lines(warnings))
-        warnbox = ('<div id="warnbox"><strong>&#9888; Data quality warnings '
-                   f"— verify before use:</strong><ul>{items}</ul></div>")
-    else:
-        warnbox = ""
-
     tmpl = Path(__file__).with_name("template.html").read_text(encoding="utf-8")
     page = (tmpl
             .replace("/*__DATA__*/", json.dumps(
@@ -722,7 +971,44 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
             .replace("__SOURCE_REV__",
                      f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
-            .replace("__WARNBOX__", warnbox))
+            .replace("__WARNBOX__", _warnbox_html(warnings)))
+    out.write_text(page, encoding="utf-8")
+
+
+def _warnbox_html(warnings: list[str]) -> str:
+    if not warnings:
+        return ""
+    items = "".join(f"<li>{html.escape(w)}</li>"
+                    for w in banner_lines(warnings))
+    return ('<div id="warnbox"><strong>&#9888; Data quality warnings '
+            f"— verify before use:</strong><ul>{items}</ul></div>")
+
+
+def write_dashboard(rollup: dict, cfg: dict, src_name: str, out: Path,
+                    warnings: list[str], budget_href: str = "",
+                    bom_href: str = "", source_rev: str = "") -> None:
+    """Spec/RFQ budget dashboard: one self-contained page (same packaging as
+    the BOM report) rolling the BOM up by spec document — stat tiles, a
+    collapsible group per spec with its line items, filtering, and a download
+    button for the budget .xlsx twin (relative sibling href, same rule as the
+    BOM page's Excel button). Costs live in the workbook, not here — the
+    dashboard shows the structural rollup the costs hang off."""
+    proj = cfg["project"]
+    tmpl = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+    page = (tmpl
+            .replace("/*__DATA__*/", json.dumps(rollup, ensure_ascii=False))
+            .replace("__TITLE__", html.escape(proj["title_line"]))
+            .replace("__SYSTEM__", html.escape(proj["system_name"]))
+            .replace("__ASSY__", html.escape(proj["assembly_number"]))
+            .replace("__CONTACT__", html.escape(
+                " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
+            .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
+            .replace("__SOURCE__", html.escape(src_name))
+            .replace("__SOURCE_REV__",
+                     f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
+            .replace("__BUDGET_XLSX_HREF__", html.escape(budget_href, quote=True))
+            .replace("__BOM_HREF__", html.escape(bom_href, quote=True))
+            .replace("__WARNBOX__", _warnbox_html(warnings)))
     out.write_text(page, encoding="utf-8")
 
 
@@ -747,6 +1033,12 @@ def main(argv=None) -> int:
                     help="raw materials-database export (/export/raw-json) to "
                          "enrich rows from; overrides [materials].cache_file and "
                          "implies enabled=true for this run")
+    ap.add_argument("--budget", type=Path, nargs="?", const=True, default=None,
+                    help="write the spec/RFQ budget workbook (rollup sheet + "
+                         "WAG/ROM/Quote costing template with live formulas)")
+    ap.add_argument("--dashboard", type=Path, nargs="?", const=True, default=None,
+                    help="write the spec/RFQ budget dashboard page (rollup of "
+                         "parts grouped by spec document)")
     ap.add_argument("-o", "--outdir", type=Path, default=Path("."))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -767,6 +1059,8 @@ def main(argv=None) -> int:
         cfg["materials"]["enabled"] = True
         cfg["materials"]["cache_file"] = str(a.materials_cache)
     enrich_materials(root, cfg, warnings)
+    rollup = (budget_rollup(root, cfg, warnings, header)
+              if (a.budget or a.dashboard) else None)
 
     if not a.quiet:
         for w in warnings:
@@ -776,6 +1070,8 @@ def main(argv=None) -> int:
     stem = a.input.stem
     did = False
     xlsx_out: Path | None = None
+    html_out: Path | None = None
+    budget_out: Path | None = None
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
         write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev)
@@ -793,11 +1089,35 @@ def main(argv=None) -> int:
             href = xlsx_out.name if same_dir else ""
         write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
                   source_rev=a.source_rev)
+        html_out = p
+        did = True
+        if not a.quiet:
+            print(f"wrote {p}")
+    if a.budget:
+        budget_out = (a.budget if isinstance(a.budget, Path)
+                      else a.outdir / f"{stem}_Budget.xlsx")
+        write_budget_xlsx(rollup, cfg, a.input.name, budget_out, warnings,
+                          source_rev=a.source_rev)
+        did = True
+        if not a.quiet:
+            print(f"wrote {budget_out}")
+    if a.dashboard:
+        p = (a.dashboard if isinstance(a.dashboard, Path)
+             else a.outdir / f"{stem}_Dashboard.html")
+        # relative sibling links, same rule as the BOM page's xlsx button
+        def sibling(target: Path | None) -> str:
+            return (target.name if target is not None
+                    and target.resolve().parent == p.resolve().parent else "")
+        write_dashboard(rollup, cfg, a.input.name, p, warnings,
+                        budget_href=sibling(budget_out),
+                        bom_href=sibling(html_out),
+                        source_rev=a.source_rev)
         did = True
         if not a.quiet:
             print(f"wrote {p}")
     if not did:
-        print("bomgen: nothing to do (use --xlsx, --html, or --both)", file=sys.stderr)
+        print("bomgen: nothing to do (use --xlsx, --html, --both, --budget, "
+              "or --dashboard)", file=sys.stderr)
         return 2
     return 0
 

@@ -34,6 +34,13 @@ state_from_found_in = true
 [output]
 excel_font = "Aptos Narrow"
 
+[budget]
+# Spec/RFQ budget rollup (--budget / --dashboard outputs; see the pdmbomgen
+# README). Map your spec-reference column via [columns] specs = "Specs";
+# multiple refs per cell separated by spec_separator (first wins for cost
+# rollup). Enable in CI with BUILD_DASHBOARD=1 (see scripts/build_pages.sh).
+spec_separator = ";"
+
 [links]
 # Link each filename to your PDM web viewer. Template placeholders:
 #   {found_in} = the "Found In" vault folder mapped to a URL path; the
