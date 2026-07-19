@@ -337,6 +337,9 @@ def _spec_rollup(tmp_path, csv_text=SPEC_CSV, cfg=None):
     f = tmp_path / "spec.csv"
     f.write_text(csv_text, encoding="utf-8")
     cfg = cfg or bomgen.load_config(None)
+    # the repo's own bomgen.toml remaps specs for the demo site; these
+    # fixtures use a literal "Specs" column, so pin the mapping
+    cfg["columns"]["specs"] = "Specs"
     warnings = []
     header, rows = bomgen.read_csv(f)
     root = bomgen.build_tree(header, rows, cfg, warnings)
@@ -424,8 +427,12 @@ def test_budget_workbook_structure(tmp_path):
 def test_cli_budget_dashboard_outputs(tmp_path):
     f = tmp_path / "spec.csv"
     f.write_text(SPEC_CSV, encoding="utf-8")
-    rc = bomgen.main([str(f), "--both", "--budget", "--dashboard",
-                      "-o", str(tmp_path), "--quiet"])
+    # explicit config: the repo's own bomgen.toml (picked up from cwd by
+    # default) remaps specs for the demo site
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf), "--both", "--budget",
+                      "--dashboard", "-o", str(tmp_path), "--quiet"])
     assert rc == 0
     dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
     assert (tmp_path / "spec_Budget.xlsx").exists()
