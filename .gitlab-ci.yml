@@ -4,6 +4,9 @@
 # GitLab Pages convention: a job named `pages` that emits a `public/`
 # artifact is deployed automatically — no further configuration needed.
 
+variables:
+  GIT_DEPTH: "0"   # full history + tags: needed for diff + historical builds
+
 pages:
   image: python:3.12-slim
   variables:
@@ -12,6 +15,15 @@ pages:
     # overridden per-project in Settings > CI/CD > Variables.
     BOM_INPUT: examples/NCC-1701_pdmout.csv
     BOM_CONFIG: bomgen.toml
+    # Demo site shows every feature: spec/RFQ dashboard + budget workbook,
+    # and per-tag historical pages with the version dropdown (needs >=1 tag).
+    BUILD_DASHBOARD: "1"
+    BUILD_HISTORY: "1"
+  before_script:
+    # python:3.12-slim has no git — needed for build_pages.sh's provenance,
+    # diff, and historical-tag lookups.
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+      >/dev/null
   script:
     - pip install ".[test]"
     - python -m pytest tests/ -q
@@ -21,3 +33,4 @@ pages:
       - public
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG   # pushing a tag republishes with the new version
