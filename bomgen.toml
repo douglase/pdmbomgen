@@ -20,6 +20,10 @@ rev         = "Rev"
 description = "Description"
 found_in    = "Found In"
 cots        = "COTS"          # D1: no heuristic; team adds PDM variable
+# For the demo, the spec/RFQ dashboard groups by the export's existing
+# "Material Specification" column (ASTM refs) — normally you'd point this
+# at a dedicated Specs column in your own export. Adjustable, not hardcoded.
+specs       = "Material Specification"
 passthrough = ["Material", "Mass"]
 
 [rules]

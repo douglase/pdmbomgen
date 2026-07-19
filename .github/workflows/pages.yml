@@ -5,6 +5,7 @@ name: Publish BOM to GitHub Pages
 on:
   push:
     branches: [main]
+    tags: ["*"]   # pushing a tag republishes with the new version in history
   workflow_dispatch: {}
 
 # Which BOM to publish. Point BOM_INPUT at your own PDM export (checked into
@@ -12,6 +13,11 @@ on:
 env:
   BOM_INPUT: examples/NCC-1701_pdmout.csv
   BOM_CONFIG: bomgen.toml
+  # Demo site shows every feature: the spec/RFQ dashboard + budget workbook,
+  # and per-tag historical pages with the version dropdown (needs >=1 git
+  # tag; tags rebuild with the current generator on every run).
+  BUILD_DASHBOARD: "1"
+  BUILD_HISTORY: "1"
 
 permissions:
   contents: read
@@ -27,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags: needed for diff + historical builds
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
