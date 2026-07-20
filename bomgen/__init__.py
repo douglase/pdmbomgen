@@ -1064,7 +1064,8 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
 def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                warnings: list[str], xlsx_href: str = "",
                source_rev: str = "", historical: str = "",
-               current_href: str = "../../index.html") -> None:
+               current_href: str = "../../index.html",
+               dashboard_href: str = "") -> None:
     """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
     download button is removed client-side). When publishing to GitHub or
     GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
@@ -1107,6 +1108,7 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
             .replace("__SOURCE_REV__",
                      f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
+            .replace("__DASHBOARD_HREF__", html.escape(dashboard_href, quote=True))
             .replace("__HISTORICAL__", _historical_html(historical, current_href))
             .replace("__WARNBOX__", _warnbox_html(warnings)))
     out.write_text(page, encoding="utf-8")
@@ -1240,6 +1242,15 @@ def main(argv=None) -> int:
     xlsx_out: Path | None = None
     html_out: Path | None = None
     budget_out: Path | None = None
+    # dashboard path resolved up front so the BOM page can link to it
+    dash_out: Path | None = None
+    if a.dashboard:
+        dash_out = (a.dashboard if isinstance(a.dashboard, Path)
+                    else a.outdir / f"{stem}_Dashboard.html")
+
+    def _sibling(target: Path | None, of: Path) -> str:
+        return (target.name if target is not None
+                and target.resolve().parent == of.resolve().parent else "")
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
         write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev,
@@ -1253,11 +1264,10 @@ def main(argv=None) -> int:
         if href is None:
             # sibling .xlsx from the same run -> relative link survives any
             # hosting root (GitHub Pages, GitLab Pages, file://, S3, ...)
-            same_dir = (xlsx_out is not None
-                        and xlsx_out.resolve().parent == p.resolve().parent)
-            href = xlsx_out.name if same_dir else ""
+            href = _sibling(xlsx_out, p)
         write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
-                  source_rev=a.source_rev, historical=a.historical)
+                  source_rev=a.source_rev, historical=a.historical,
+                  dashboard_href=_sibling(dash_out, p))
         html_out = p
         did = True
         if not a.quiet:
@@ -1271,19 +1281,14 @@ def main(argv=None) -> int:
         if not a.quiet:
             print(f"wrote {budget_out}")
     if a.dashboard:
-        p = (a.dashboard if isinstance(a.dashboard, Path)
-             else a.outdir / f"{stem}_Dashboard.html")
         # relative sibling links, same rule as the BOM page's xlsx button
-        def sibling(target: Path | None) -> str:
-            return (target.name if target is not None
-                    and target.resolve().parent == p.resolve().parent else "")
-        write_dashboard(rollup, cfg, a.input.name, p, warnings,
-                        budget_href=sibling(budget_out),
-                        bom_href=sibling(html_out),
+        write_dashboard(rollup, cfg, a.input.name, dash_out, warnings,
+                        budget_href=_sibling(budget_out, dash_out),
+                        bom_href=_sibling(html_out, dash_out),
                         source_rev=a.source_rev, historical=a.historical)
         did = True
         if not a.quiet:
-            print(f"wrote {p}")
+            print(f"wrote {dash_out}")
     if not did:
         print("bomgen: nothing to do (use --xlsx, --html, --both, --budget, "
               "or --dashboard)", file=sys.stderr)

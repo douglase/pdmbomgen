@@ -441,6 +441,9 @@ def test_cli_budget_dashboard_outputs(tmp_path):
     assert 'href="spec_BOM.html"' in dash
     # rollup data embedded; warnings banner present
     assert "SPEC-MACH-002" in dash and 'id="warnbox"' in dash
+    # and the BOM page links forward to the dashboard (discoverability)
+    bom = (tmp_path / "spec_BOM.html").read_text(encoding="utf-8")
+    assert 'id="dash"' in bom and 'href="spec_Dashboard.html"' in bom
 
 
 def test_pdm_found_in_missing_skips_link(tmp_path):
