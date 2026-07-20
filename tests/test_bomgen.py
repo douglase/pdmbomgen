@@ -222,6 +222,145 @@ def test_cli_source_rev_flag(tmp_path):
     assert "deadbee" in (tmp_path / "o.html").read_text(encoding="utf-8")
 
 
+# -------------------------------------------------------- source-url / provenance
+
+SOURCE_URL = "https://github.com/owner/repo/blob/abc1234/src.csv"
+
+
+def test_source_url_hyperlink_in_html(tmp_path):
+    """D9: --source-url turns the source filename into an <a> hyperlink in HTML;
+    omitted -> plain <code> (no dead link)."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings,
+                      source_url=SOURCE_URL)
+    page = h.read_text(encoding="utf-8")
+    assert f'href="{SOURCE_URL}"' in page
+    assert "<code>src.csv</code>" in page   # filename still in <code>
+
+    # no source_url -> no <a>, bare <code>
+    h2 = tmp_path / "o2.html"
+    bomgen.write_html(root, cfg, "src.csv", h2, warnings)
+    page2 = h2.read_text(encoding="utf-8")
+    assert SOURCE_URL not in page2
+    assert "<code>src.csv</code>" in page2  # plain, no link
+
+
+def test_source_url_hyperlink_in_dashboard(tmp_path):
+    """source_url threads through write_dashboard."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf), "--dashboard",
+                      "-o", str(tmp_path),
+                      "--source-url", SOURCE_URL, "--quiet"])
+    assert rc == 0
+    dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
+    assert f'href="{SOURCE_URL}"' in dash
+
+
+def test_source_url_hyperlink_in_excel(tmp_path):
+    """source_url wires a hyperlink onto the source cell in the BOM xlsx."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    x = tmp_path / "o.xlsx"
+    bomgen.write_excel(root, cfg, x, warnings, src_name="src.csv",
+                       source_url=SOURCE_URL)
+    import openpyxl
+    ws = openpyxl.load_workbook(x).active
+    # row 8 carries the source name + hyperlink
+    assert ws["B8"].value and "src.csv" in ws["B8"].value
+    assert ws["B8"].hyperlink and SOURCE_URL in ws["B8"].hyperlink.target
+
+    # omitted source_url -> no hyperlink on row 8
+    x2 = tmp_path / "o2.xlsx"
+    bomgen.write_excel(root, cfg, x2, warnings, src_name="src.csv")
+    ws2 = openpyxl.load_workbook(x2).active
+    assert ws2["B8"].hyperlink is None
+
+
+def test_source_url_no_hyperlink_when_empty(tmp_path):
+    """Empty source_url -> no hyperlink attr, no dead <a> in HTML."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, source_url="")
+    page = h.read_text(encoding="utf-8")
+    # source rendered as plain <code> without any wrapping <a> link
+    assert "<code>src.csv</code>" in page
+    # a linked source would look like href="..."><code>src.csv</code>; must be absent
+    assert '"><code>src.csv</code>' not in page
+
+
+def test_source_url_in_budget_xlsx(tmp_path):
+    """source_url sets a hyperlink on the Budget sheet meta cell."""
+    rollup, warnings = _spec_rollup(tmp_path)
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "spec.csv", out, warnings,
+                             source_url=SOURCE_URL)
+    import openpyxl
+    wb = openpyxl.load_workbook(out)
+    bs = wb["Budget"]
+    # row 2 is the meta cell; it should carry the hyperlink
+    assert bs["A2"].hyperlink and SOURCE_URL in bs["A2"].hyperlink.target
+
+    # omitted -> no hyperlink
+    out2 = tmp_path / "budget2.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "spec.csv", out2, warnings)
+    bs2 = openpyxl.load_workbook(out2)["Budget"]
+    assert bs2["A2"].hyperlink is None
+
+
+def test_cli_source_url_flag(tmp_path):
+    """--source-url propagates to HTML and xlsx via the CLI."""
+    rc = bomgen.main([str(SAMPLE_CSV), "--both",
+                      "--source-url", SOURCE_URL,
+                      "-o", str(tmp_path), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "NCC-1701_pdmout_BOM.html").read_text(encoding="utf-8")
+    assert f'href="{SOURCE_URL}"' in page
+    import openpyxl
+    ws = openpyxl.load_workbook(
+        tmp_path / "NCC-1701_pdmout_BOM.xlsx").active
+    assert ws["B8"].hyperlink and SOURCE_URL in ws["B8"].hyperlink.target
+
+
+def test_provenance_details_block_in_html(tmp_path):
+    """A collapsible <details> provenance block is embedded in the HTML header."""
+    cfg = bomgen.load_config(None)
+    root, warnings = parse(SAMPLE_CSV, cfg)
+    h = tmp_path / "o.html"
+    bomgen.write_html(root, cfg, "src.csv", h, warnings,
+                      source_url=SOURCE_URL, source_rev="abc1234")
+    page = h.read_text(encoding="utf-8")
+    # block present with key identifiers
+    assert '<details class="prov">' in page
+    assert "<summary>Provenance</summary>" in page
+    assert SOURCE_URL in page          # source URL in the details body
+    assert "abc1234" in page           # source rev
+    assert f"bomgen {bomgen.__version__}" in page
+
+
+def test_provenance_details_block_in_dashboard(tmp_path):
+    """Dashboard HTML also carries the collapsible provenance block."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf), "--dashboard",
+                      "-o", str(tmp_path),
+                      "--source-url", SOURCE_URL,
+                      "--source-rev", "def5678", "--quiet"])
+    assert rc == 0
+    dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
+    assert '<details class="prov">' in dash
+    assert SOURCE_URL in dash
+    assert "def5678" in dash
+
+
 def test_pdm_file_url_links(tmp_path):
     """Configurable file_url_template turns filenames into PDM-viewer links
     in both outputs; {file} is substituted with the URL-encoded filename."""
