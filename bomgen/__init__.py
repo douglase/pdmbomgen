@@ -761,7 +761,8 @@ HIST_YELLOW = "FFF3C4"
 
 def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
                       warnings: list[str] | None = None,
-                      source_rev: str = "", historical: str = "") -> None:
+                      source_rev: str = "", historical: str = "",
+                      source_url: str = "") -> None:
     """Budget workbook: sheet "Budget" = per-spec rollup driven by live
     SUMIF/COUNTIF formulas over sheet "Parts", the costing template where
     unit WAG / ROM / Quote get typed in (shaded input columns). Ext costs and
@@ -836,7 +837,12 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
     if source_rev:
         meta += f" · rev {source_rev}"
     meta += f" · generated {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    bs.cell(row=2, column=1, value=meta).font = F(9)
+    meta_cell = bs.cell(row=2, column=1, value=meta)
+    meta_cell.font = F(9)
+    if source_url:
+        meta_cell.hyperlink = source_url
+        meta_cell.font = Font(name=fontname, size=9, color="0563C1",
+                              underline="single")
     bs.cell(row=3, column=1,
             value="Enter unit costs on the Parts sheet (shaded WAG/ROM/Quote "
                   "columns); every figure here rolls up live. Best = Quote, "
@@ -914,7 +920,8 @@ def banner_lines(warnings: list[str]) -> list[str]:
 
 def write_excel(root: BomNode, cfg: dict, out: Path,
                 warnings: list[str] | None = None, source_rev: str = "",
-                historical: str = "") -> None:
+                historical: str = "", src_name: str = "",
+                source_url: str = "") -> None:
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -983,10 +990,21 @@ def write_excel(root: BomNode, cfg: dict, out: Path,
 
     put(6, "Bill of Materials (BOM)", 18)
     put(7, proj["title_line"])
-    if source_rev:
+    if src_name or source_rev:
         # row 8 is a blank spacer in the template; safe to use for
         # provenance without disturbing the documented title-block rows
-        put(8, f"Source revision: {source_rev}", size=10, bold=False)
+        if src_name and source_rev:
+            row8_text = f"Source: {src_name} · rev {source_rev}"
+        elif src_name:
+            row8_text = f"Source: {src_name}"
+        else:
+            row8_text = f"Source revision: {source_rev}"
+        put(8, row8_text, size=10, bold=False)
+        if source_url:
+            c = ws["B8"]
+            c.hyperlink = source_url
+            c.font = Font(name=fontname, size=10, bold=False,
+                          color="0563C1", underline="single")
     put(9, proj["project_box"])
     put(10, f"System Name: {proj['system_name']}")
     put(11, f"Assembly Name {proj['assembly_number']}")
@@ -1065,7 +1083,8 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
                warnings: list[str], xlsx_href: str = "",
                source_rev: str = "", historical: str = "",
                current_href: str = "../../index.html",
-               dashboard_href: str = "") -> None:
+               dashboard_href: str = "",
+               source_url: str = "") -> None:
     """xlsx_href: URL/relative path to the sibling .xlsx (empty -> the
     download button is removed client-side). When publishing to GitHub or
     GitLab Pages the .xlsx is deployed next to the HTML, so a bare filename
@@ -1074,7 +1093,11 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
     source_rev: opaque provenance string (e.g. the input CSV's last git
     commit hash in the repo that owns it) rendered next to the source
     filename. bomgen itself has no git dependency — callers compute this
-    (see template-repo/scripts/build_pages.sh) and pass it in verbatim."""
+    (see template-repo/scripts/build_pages.sh) and pass it in verbatim.
+
+    source_url: URL pointing to the source BOM file in its repository (e.g.
+    a GitHub blob URL). When provided the source filename is rendered as a
+    hyperlink; empty -> plain ``<code>`` text (no dead link)."""
     proj = cfg["project"]
     passthrough = list(cfg["columns"].get("passthrough", []))
     matcfg = cfg.get("materials", {})
@@ -1104,12 +1127,14 @@ def write_html(root: BomNode, cfg: dict, src_name: str, out: Path,
             .replace("__CONTACT__", html.escape(
                 " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
-            .replace("__SOURCE__", html.escape(src_name))
+            .replace("__SOURCE__", _source_link_html(src_name, source_url))
             .replace("__SOURCE_REV__",
                      f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__XLSX_HREF__", html.escape(xlsx_href, quote=True))
             .replace("__DASHBOARD_HREF__", html.escape(dashboard_href, quote=True))
             .replace("__HISTORICAL__", _historical_html(historical, current_href))
+            .replace("__PROVENANCE_DETAILS__",
+                     _provenance_details_html(src_name, source_url, source_rev, cfg))
             .replace("__WARNBOX__", _warnbox_html(warnings)))
     out.write_text(page, encoding="utf-8")
 
@@ -1138,11 +1163,48 @@ def _warnbox_html(warnings: list[str]) -> str:
             f"— verify before use:</strong><ul>{items}</ul></div>")
 
 
+def _source_link_html(src_name: str, source_url: str) -> str:
+    """Return ``<code>src_name</code>`` or a hyperlinked variant.
+
+    Follows the same "no dead link" rule used by xlsx_href / dashboard_href:
+    empty source_url -> plain ``<code>``, no ``<a>``."""
+    code = f'<code>{html.escape(src_name)}</code>'
+    if source_url:
+        return f'<a href="{html.escape(source_url, quote=True)}">{code}</a>'
+    return code
+
+
+def _provenance_details_html(src_name: str, source_url: str,
+                              source_rev: str, cfg: dict) -> str:
+    """Collapsible ``<details>`` provenance block for the HTML header.
+
+    Shows the full source URL (when provided), source revision, bomgen
+    version, and the config file path (when a custom config was used).
+    Returns an empty string when there is nothing extra to show."""
+    items = []
+    if source_url:
+        items.append(
+            f'Source: <a href="{html.escape(source_url, quote=True)}">'
+            f'{html.escape(src_name)}</a>')
+    if source_rev:
+        items.append(f'Rev: <code>{html.escape(source_rev)}</code>')
+    items.append(f'bomgen {html.escape(__version__)}')
+    config_path = cfg.get("_config_path")
+    if config_path:
+        items.append(f'Config: <code>{html.escape(config_path)}</code>')
+    inner = ' · '.join(items)
+    return (
+        '<details class="prov"><summary>Provenance</summary>'
+        f'<div class="prov-body">{inner}</div></details>'
+    )
+
+
 def write_dashboard(rollup: dict, cfg: dict, src_name: str, out: Path,
                     warnings: list[str], budget_href: str = "",
                     bom_href: str = "", source_rev: str = "",
                     historical: str = "",
-                    current_href: str = "../../dashboard.html") -> None:
+                    current_href: str = "../../dashboard.html",
+                    source_url: str = "") -> None:
     """Spec/RFQ budget dashboard: one self-contained page (same packaging as
     the BOM report) rolling the BOM up by spec document — stat tiles, a
     collapsible group per spec with its line items, filtering, and a download
@@ -1159,12 +1221,14 @@ def write_dashboard(rollup: dict, cfg: dict, src_name: str, out: Path,
             .replace("__CONTACT__", html.escape(
                 " · ".join(x for x in (proj["contact_name"], proj["contact_info"]) if x)))
             .replace("__GENERATED__", datetime.now().strftime("%Y-%m-%d %H:%M"))
-            .replace("__SOURCE__", html.escape(src_name))
+            .replace("__SOURCE__", _source_link_html(src_name, source_url))
             .replace("__SOURCE_REV__",
                      f" · rev <code>{html.escape(source_rev)}</code>" if source_rev else "")
             .replace("__BUDGET_XLSX_HREF__", html.escape(budget_href, quote=True))
             .replace("__BOM_HREF__", html.escape(bom_href, quote=True))
             .replace("__HISTORICAL__", _historical_html(historical, current_href))
+            .replace("__PROVENANCE_DETAILS__",
+                     _provenance_details_html(src_name, source_url, source_rev, cfg))
             .replace("__WARNBOX__", _warnbox_html(warnings)))
     out.write_text(page, encoding="utf-8")
 
@@ -1186,6 +1250,11 @@ def main(argv=None) -> int:
                     help="opaque provenance string embedded in both reports "
                          "(e.g. the input file's last git commit hash: "
                          "$(git log -1 --format=%%h -- INPUT)); blank if omitted")
+    ap.add_argument("--source-url", default="", metavar="URL",
+                    help="URL of the source BOM file (e.g. a GitHub blob URL "
+                         "like https://github.com/owner/repo/blob/<sha>/path.csv) "
+                         "that turns the source filename into a hyperlink in HTML "
+                         "pages and xlsx workbooks; empty -> plain text (no dead link)")
     ap.add_argument("--materials-cache", type=Path, default=None, metavar="PATH",
                     help="raw materials-database export (/export/raw-json) to "
                          "enrich rows from; overrides [materials].cache_file and "
@@ -1254,7 +1323,8 @@ def main(argv=None) -> int:
     if a.xlsx or a.both:
         xlsx_out = a.xlsx if isinstance(a.xlsx, Path) else a.outdir / f"{stem}_BOM.xlsx"
         write_excel(root, cfg, xlsx_out, warnings, source_rev=a.source_rev,
-                    historical=a.historical)
+                    historical=a.historical, src_name=a.input.name,
+                    source_url=a.source_url)
         did = True
         if not a.quiet:
             print(f"wrote {xlsx_out}")
@@ -1267,7 +1337,8 @@ def main(argv=None) -> int:
             href = _sibling(xlsx_out, p)
         write_html(root, cfg, a.input.name, p, warnings, xlsx_href=href,
                   source_rev=a.source_rev, historical=a.historical,
-                  dashboard_href=_sibling(dash_out, p))
+                  dashboard_href=_sibling(dash_out, p),
+                  source_url=a.source_url)
         html_out = p
         did = True
         if not a.quiet:
@@ -1276,7 +1347,8 @@ def main(argv=None) -> int:
         budget_out = (a.budget if isinstance(a.budget, Path)
                       else a.outdir / f"{stem}_Budget.xlsx")
         write_budget_xlsx(rollup, cfg, a.input.name, budget_out, warnings,
-                          source_rev=a.source_rev, historical=a.historical)
+                          source_rev=a.source_rev, historical=a.historical,
+                          source_url=a.source_url)
         did = True
         if not a.quiet:
             print(f"wrote {budget_out}")
@@ -1285,7 +1357,8 @@ def main(argv=None) -> int:
         write_dashboard(rollup, cfg, a.input.name, dash_out, warnings,
                         budget_href=_sibling(budget_out, dash_out),
                         bom_href=_sibling(html_out, dash_out),
-                        source_rev=a.source_rev, historical=a.historical)
+                        source_rev=a.source_rev, historical=a.historical,
+                        source_url=a.source_url)
         did = True
         if not a.quiet:
             print(f"wrote {dash_out}")
