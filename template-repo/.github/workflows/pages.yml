@@ -25,7 +25,7 @@ env:
   # version dropdown, and green change-highlighting vs the previous tag.
   BUILD_HISTORY: "1"
   # Spec/RFQ budget dashboard + workbook; needs a specs column (bomgen.toml)
-  BUILD_DASHBOARD: "0"
+  BUILD_DASHBOARD: "1"
 
 permissions:
   contents: read
