@@ -89,6 +89,13 @@ there and design doc §6.
   piece parts); parts under no spec are reported as *(unassigned)* so
   budget gaps stay visible (warnings V10–V12). In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
+- **Build provenance** — every output records what it was built from: a
+  collapsible *Build provenance* block in the page headers and a linked
+  cell in both workbooks, listing the source BOM path (hyperlinked to the
+  file at the build commit), source data rev, repository/branch/commit,
+  config file, and toolchain versions (bomgen, Python, openpyxl). The git
+  facts come from `build_pages.sh` (CI env vars or the git remote) via
+  `--repo/--branch/--commit/--source-url`; bomgen fills in the rest.
 - **Change highlighting & historical versions** — `--diff-against PREV.csv`
   highlights rows changed/added since a previous version **green** in every
   output (removed parts are summarized in the banner); only report columns

@@ -13,6 +13,11 @@ body{font:14px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;margin:0
 header{padding:18px 22px 10px;border-bottom:2px solid var(--accent)}
 header h1{margin:0;font-size:20px}
 header .meta{color:var(--muted);font-size:12.5px;margin-top:4px}
+#prov{margin-top:6px;font-size:12px;color:var(--muted)}
+#prov summary{cursor:pointer;user-select:none;color:var(--accent)}
+#prov dl{display:grid;grid-template-columns:max-content 1fr;gap:1px 14px;margin:6px 0 0;max-width:640px}
+#prov dt{font-weight:600}
+#prov dd{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;overflow-wrap:anywhere}
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 22px;position:sticky;top:0;background:#fbfaf7;border-bottom:1px solid var(--line);z-index:2}
 #controls input{flex:1 1 220px;max-width:340px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px}
 button,a.btn{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer;color:inherit;text-decoration:none;display:inline-block}
@@ -43,7 +48,8 @@ footer{padding:10px 22px;color:var(--muted);font-size:11.5px}
 <header>
   <h1>Bill of Materials — NCC-FA001-00</h1>
   <div class="meta">NCC-1701 BOM DRAFT, 7/12/26 · USS Enterprise Deflector Subsystem · Montgomery Scott · scotty@starfleet.example</div>
-  <div class="meta">Generated 2026-07-20 00:45 from <code>NCC-1701_pdmout.csv</code> by bomgen</div>
+  <div class="meta">Generated 2026-07-20 05:46 from <code>NCC-1701_pdmout.csv</code> by bomgen</div>
+  <details id="prov"><summary>Build provenance</summary><dl><dt>Source BOM</dt><dd>examples/NCC-1701_pdmout.csv</dd><dt>Config</dt><dd>bomgen.toml</dd><dt>bomgen</dt><dd>0.1.0</dd><dt>Python</dt><dd>3.11.15</dd><dt>openpyxl</dt><dd>3.1.5</dd><dt>Generated</dt><dd>2026-07-20 05:46</dd></dl></details>
 </header>
 <div id="warnbox"><strong>&#9888; Data quality warnings — verify before use:</strong><ul><li>V7: column &#x27;Mass&#x27;: 4 row(s) hold an unresolved SolidWorks property expression (e.g. &#x27;SW-Mass@.SLDPRT&#x27;), not a value — rebuild and save those files in CAD so PDM exports the evaluated number</li><li>V5: COTS column &#x27;COTS&#x27; not in input; COTS will be blank (per design D1 — add the variable in PDM or edit the CSV)</li><li>R1: row 31: duplicate path &#x27;2.1&#x27; reinterpreted as &#x27;2.10&#x27; (Excel float-mangling; export direct from PDM to avoid)</li></ul></div>
 <div id="controls">

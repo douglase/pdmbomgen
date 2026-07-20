@@ -13,10 +13,11 @@ body{font:14px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;margin:0
 header{padding:18px 22px 10px;border-bottom:2px solid var(--accent)}
 header h1{margin:0;font-size:20px}
 header .meta{color:var(--muted);font-size:12.5px;margin-top:4px}
-details.prov{font-size:11.5px;color:var(--muted);margin-top:3px}
-details.prov>summary{cursor:pointer;list-style:none;display:inline}
-details.prov>summary::-webkit-details-marker{display:none}
-.prov-body{padding:3px 0 0 12px}
+#prov{margin-top:6px;font-size:12px;color:var(--muted)}
+#prov summary{cursor:pointer;user-select:none;color:var(--accent)}
+#prov dl{display:grid;grid-template-columns:max-content 1fr;gap:1px 14px;margin:6px 0 0;max-width:640px}
+#prov dt{font-weight:600}
+#prov dd{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;overflow-wrap:anywhere}
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 22px;position:sticky;top:0;background:#fbfaf7;border-bottom:1px solid var(--line);z-index:2}
 #controls input{flex:1 1 220px;max-width:340px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px}
 button,a.btn{padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer;color:inherit;text-decoration:none;display:inline-block}
@@ -48,7 +49,7 @@ __HISTORICAL__
   <h1>Bill of Materials — __ASSY__</h1>
   <div class="meta">__TITLE__ · __SYSTEM__ · __CONTACT__</div>
   <div class="meta">Generated __GENERATED__ from __SOURCE__ by bomgen__SOURCE_REV__</div>
-  __PROVENANCE_DETAILS__
+  __PROVENANCE__
 </header>
 __WARNBOX__
 <div id="controls">

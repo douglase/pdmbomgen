@@ -228,13 +228,13 @@ SOURCE_URL = "https://github.com/owner/repo/blob/abc1234/src.csv"
 
 
 def test_source_url_hyperlink_in_html(tmp_path):
-    """D9: --source-url turns the source filename into an <a> hyperlink in HTML;
+    """source_url turns the inline source filename into an <a> hyperlink;
     omitted -> plain <code> (no dead link)."""
     cfg = bomgen.load_config(None)
     root, warnings = parse(SAMPLE_CSV, cfg)
     h = tmp_path / "o.html"
     bomgen.write_html(root, cfg, "src.csv", h, warnings,
-                      source_url=SOURCE_URL)
+                      provenance={"source_url": SOURCE_URL})
     page = h.read_text(encoding="utf-8")
     assert f'href="{SOURCE_URL}"' in page
     assert "<code>src.csv</code>" in page   # filename still in <code>
@@ -266,8 +266,9 @@ def test_source_url_hyperlink_in_excel(tmp_path):
     cfg = bomgen.load_config(None)
     root, warnings = parse(SAMPLE_CSV, cfg)
     x = tmp_path / "o.xlsx"
-    bomgen.write_excel(root, cfg, x, warnings, src_name="src.csv",
-                       source_url=SOURCE_URL)
+    bomgen.write_excel(root, cfg, x, warnings,
+                       provenance={"source": "src.csv",
+                                   "source_url": SOURCE_URL})
     import openpyxl
     ws = openpyxl.load_workbook(x).active
     # row 8 carries the source name + hyperlink
@@ -276,7 +277,8 @@ def test_source_url_hyperlink_in_excel(tmp_path):
 
     # omitted source_url -> no hyperlink on row 8
     x2 = tmp_path / "o2.xlsx"
-    bomgen.write_excel(root, cfg, x2, warnings, src_name="src.csv")
+    bomgen.write_excel(root, cfg, x2, warnings,
+                       provenance={"source": "src.csv"})
     ws2 = openpyxl.load_workbook(x2).active
     assert ws2["B8"].hyperlink is None
 
@@ -286,7 +288,8 @@ def test_source_url_no_hyperlink_when_empty(tmp_path):
     cfg = bomgen.load_config(None)
     root, warnings = parse(SAMPLE_CSV, cfg)
     h = tmp_path / "o.html"
-    bomgen.write_html(root, cfg, "src.csv", h, warnings, source_url="")
+    bomgen.write_html(root, cfg, "src.csv", h, warnings,
+                      provenance={"source_url": ""})
     page = h.read_text(encoding="utf-8")
     # source rendered as plain <code> without any wrapping <a> link
     assert "<code>src.csv</code>" in page
@@ -300,7 +303,7 @@ def test_source_url_in_budget_xlsx(tmp_path):
     cfg = bomgen.load_config(None)
     out = tmp_path / "budget.xlsx"
     bomgen.write_budget_xlsx(rollup, cfg, "spec.csv", out, warnings,
-                             source_url=SOURCE_URL)
+                             provenance={"source_url": SOURCE_URL})
     import openpyxl
     wb = openpyxl.load_workbook(out)
     bs = wb["Budget"]
@@ -333,15 +336,17 @@ def test_provenance_details_block_in_html(tmp_path):
     cfg = bomgen.load_config(None)
     root, warnings = parse(SAMPLE_CSV, cfg)
     h = tmp_path / "o.html"
-    bomgen.write_html(root, cfg, "src.csv", h, warnings,
-                      source_url=SOURCE_URL, source_rev="abc1234")
+    bomgen.write_html(root, cfg, "src.csv", h, warnings, source_rev="abc1234",
+                      provenance={"source": "src.csv",
+                                  "source_url": SOURCE_URL,
+                                  "source_rev": "abc1234"})
     page = h.read_text(encoding="utf-8")
     # block present with key identifiers
-    assert '<details class="prov">' in page
-    assert "<summary>Provenance</summary>" in page
+    assert '<details id="prov">' in page
+    assert "Build provenance" in page
     assert SOURCE_URL in page          # source URL in the details body
     assert "abc1234" in page           # source rev
-    assert f"bomgen {bomgen.__version__}" in page
+    assert bomgen.__version__ in page
 
 
 def test_provenance_details_block_in_dashboard(tmp_path):
@@ -356,7 +361,7 @@ def test_provenance_details_block_in_dashboard(tmp_path):
                       "--source-rev", "def5678", "--quiet"])
     assert rc == 0
     dash = (tmp_path / "spec_Dashboard.html").read_text(encoding="utf-8")
-    assert '<details class="prov">' in dash
+    assert '<details id="prov">' in dash
     assert SOURCE_URL in dash
     assert "def5678" in dash
 
@@ -737,6 +742,61 @@ def test_build_pages_history_integration(tmp_path):
     assert 'id="histbar"' not in cur                  # current not yellow
     v2 = (site / "v" / "t2" / "versions.js").read_text()
     assert '"../../index.html"' in v2                 # relative root link
+
+
+# ------------------------------------------------------------ provenance
+
+def test_provenance_in_all_outputs(tmp_path):
+    """Build-provenance: repo/branch/commit + linked source path + toolchain
+    versions appear as a <details> block on both pages and a cell in both
+    workbooks."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf), "--both", "--budget",
+                      "--dashboard", "-o", str(tmp_path), "--quiet",
+                      "--repo", "douglase/pdmbomgen", "--branch", "main",
+                      "--commit", "abc1234", "--source-rev", "def5678",
+                      "--source-path", "vault/spec.csv",
+                      "--source-url",
+                      "https://github.com/douglase/pdmbomgen/blob/abc1234/vault/spec.csv"])
+    assert rc == 0
+    import openpyxl, platform
+    opx, py = openpyxl.__version__, platform.python_version()
+
+    for page_name in ("spec_BOM.html", "spec_Dashboard.html"):
+        page = (tmp_path / page_name).read_text(encoding="utf-8")
+        assert '<details id="prov">' in page and "Build provenance" in page
+        for frag in ("douglase/pdmbomgen", "main", "abc1234", "def5678",
+                     "vault/spec.csv", opx, py, bomgen.__version__):
+            assert frag in page, (page_name, frag)
+        assert 'href="https://github.com/douglase/pdmbomgen/blob/' in page
+
+    ws = openpyxl.load_workbook(tmp_path / "spec_BOM.xlsx").active
+    cell = ws["B14"]
+    for frag in ("douglase/pdmbomgen", "abc1234", "vault/spec.csv", opx, py):
+        assert frag in cell.value
+    assert cell.hyperlink and "blob/abc1234" in cell.hyperlink.target
+
+    wb = openpyxl.load_workbook(tmp_path / "spec_Budget.xlsx")
+    cells = [c for row in wb["Budget"].iter_rows() for c in row
+             if isinstance(c.value, str) and "openpyxl" in c.value]
+    assert cells and "douglase/pdmbomgen" in cells[0].value
+
+
+def test_provenance_defaults_without_git_flags(tmp_path):
+    """No git flags -> block still present with toolchain versions; no repo/
+    branch/commit rows and no dead link."""
+    f = tmp_path / "plain.csv"
+    f.write_text("Level,Qty,Number\n1,1,NCC-FA001.SLDASM\n", encoding="utf-8")
+    rc = bomgen.main([str(f), "--html", str(tmp_path / "o.html"), "--quiet"])
+    assert rc == 0
+    page = (tmp_path / "o.html").read_text(encoding="utf-8")
+    assert '<details id="prov">' in page
+    import platform
+    assert platform.python_version() in page
+    assert "Repository" not in page and "Build commit" not in page
 
 
 # ------------------------------------------------------------ materials (Stage B)
