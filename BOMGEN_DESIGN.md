@@ -125,6 +125,11 @@ BomNode
   is_assembly: bool    # extension == .SLDASM or has children
   cots: str            # §4.3 — verbatim from mapped column, else ""
   state: str           # from Found In (optional)
+  file_url: str        # PDM viewer link from [links] template (D9), else ""
+  material_props: dict # materials-database enrichment (D10), {} when off
+  specs: list[str]     # spec-doc refs from columns.specs cell (§5.4, D11)
+  spec: str            # primary (first) spec ref, "" when none
+  diff: str            # ""|"changed"|"added" vs --diff-against (§5.5, D12)
 ```
 
 Implementation: plain dataclass + dict index `{path: node}`; no external tree
@@ -423,14 +428,24 @@ the generator's stderr. No warnings → no banner.
 ## 8. CLI
 
 ```
-bomgen INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
-                 [--both] [--xlsx-url URL] [--source-rev REV]
-                 [-o OUTDIR] [--quiet]
+bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
+                       [--budget [OUT]] [--dashboard [OUT]]
+                       [--xlsx-url URL] [--materials-cache PATH]
+                       [--diff-against PREV] [--historical LABEL]
+                       [--source-rev REV] [--repo NAME] [--branch NAME]
+                       [--commit SHA] [--source-url URL] [--source-path PATH]
+                       [-o OUTDIR] [--quiet]
 ```
-`--xlsx-url` overrides the HTML download-button target (§5.2, D5).
-`--source-rev` embeds an opaque provenance string in both outputs (§5.1,
-§5.2, D8) — typically the input file's last git commit hash, computed by
-the caller (bomgen has no VCS dependency itself).
+- `--xlsx-url` overrides the HTML download-button target (§5.2, D5).
+- `--budget` / `--dashboard` write the spec/RFQ budget outputs (§5.4, D11).
+- `--materials-cache` overrides `[materials].cache_file` and implies
+  `enabled=true` for the run (D10).
+- `--diff-against` / `--historical` drive change highlighting and the
+  yellow historical chrome (§5.5, D12).
+- `--source-rev` plus `--repo/--branch/--commit/--source-url/--source-path`
+  feed the build-provenance record (D8, D13) — all opaque strings computed
+  by the caller (normally `scripts/build_pages.sh`); bomgen has no VCS
+  dependency itself.
 
 Single-module implementation (`bomgen/__init__.py`, matching the original
 single-file philosophy — one file of logic, no internal package split);

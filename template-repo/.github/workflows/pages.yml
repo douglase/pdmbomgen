@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history: needed so `git log -- INPUT` finds its real last commit
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Configure access to private pdmbomgen (no-op if public)

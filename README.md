@@ -39,11 +39,17 @@ dependency.
 ## Usage
 
 ```
-bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
-                       [--both] [--xlsx-url URL] [--source-rev REV]
+bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
+                       [--budget [OUT]] [--dashboard [OUT]]
+                       [--xlsx-url URL] [--materials-cache PATH]
+                       [--diff-against PREV] [--historical LABEL]
+                       [--source-rev REV] [--repo NAME] [--branch NAME]
+                       [--commit SHA] [--source-url URL] [--source-path PATH]
                        [-o OUTDIR] [--quiet]
 ```
-(`python -m bomgen ...` works identically from a clone.)
+(`python -m bomgen ...` works identically from a clone. The provenance
+flags — `--source-rev/--repo/--branch/--commit/--source-url/--source-path`
+— are normally supplied by `scripts/build_pages.sh`, not typed by hand.)
 
 - **CSV** — the interactive path: PDM BOM tab → export. Tip: do **not**
   round-trip the file through Excel; Excel float-mangles two-segment item
