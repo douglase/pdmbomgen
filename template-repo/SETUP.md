@@ -115,6 +115,16 @@ git push -u origin main
    (GitHub's equivalent `schedule:` trigger is already in
    `.github/workflows/pages.yml` — no extra step needed there.)
 
+## 6c. Optional features (env toggles, preset in both CI configs)
+
+- `BUILD_DASHBOARD=1` (default here) — publishes the spec/RFQ budget
+  dashboard + workbook; map your spec column via `[columns].specs` in
+  `bomgen.toml` or every part reports as unassigned.
+- `BUILD_HISTORY=1` (default here) — rebuilds every git tag into
+  `v/<tag>/` with yellow historical chrome and a version dropdown; push a
+  tag (`git tag v1.0 && git push origin v1.0`) to populate it. Pushing a
+  tag also triggers a republish on both services.
+
 ## 7. Verify
 
 Open the published URL: the BOM should render, the **Download Excel**

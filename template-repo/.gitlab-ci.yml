@@ -24,7 +24,7 @@ pages:
     # pages + version dropdown + green change-highlighting vs previous tag)
     BUILD_HISTORY: "1"
     # Spec/RFQ budget dashboard + workbook (needs a specs column)
-    BUILD_DASHBOARD: "0"
+    BUILD_DASHBOARD: "1"
   before_script:
     # python:3.12-slim has no git — needed both for pip's `git+https://...`
     # install of pdmbomgen (requirements.txt) and for build_pages.sh's own

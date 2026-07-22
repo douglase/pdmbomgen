@@ -36,8 +36,12 @@ git rev-parse --git-dir >/dev/null 2>&1 && have_git=1
 
 rev=""
 diffargs=()
+provargs=()
+repo=""
+src_url_base=""   # blob-URL prefix; append "<sha>/<path>" to link a file
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+src_url_for() { [ -n "$src_url_base" ] && echo "$src_url_base/$1/$input" || true; }
 if [ "$have_git" = 1 ]; then
     rev=$(git log -1 --format='%h (%ad)' --date=short -- "$input" 2>/dev/null || true)
     # Current page diffs against the previous commit touching the input
@@ -47,6 +51,32 @@ if [ "$have_git" = 1 ]; then
             > "$tmp/prev_input" 2>/dev/null; then
         diffargs=(--diff-against "$tmp/prev_input")
     fi
+
+    # Build-provenance facts (repo/branch/commit + source-file link); CI env
+    # vars are authoritative when present (GitHub Actions / GitLab CI).
+    commit=$(git rev-parse --short HEAD 2>/dev/null || true)
+    full_sha=$(git rev-parse HEAD 2>/dev/null || true)
+    branch=${GITHUB_REF_NAME:-${CI_COMMIT_REF_NAME:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)}}
+    [ "$branch" = "HEAD" ] && branch=""   # detached checkout
+    if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+        repo="$GITHUB_REPOSITORY"
+        src_url_base="${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY/blob"
+    elif [ -n "${CI_PROJECT_URL:-}" ]; then
+        repo="${CI_PROJECT_PATH:-$CI_PROJECT_URL}"
+        src_url_base="$CI_PROJECT_URL/-/blob"
+    else
+        remote=$(git remote get-url origin 2>/dev/null || true)
+        case "$remote" in
+          *github.com*)
+            repo=$(echo "$remote" | sed -E 's#(git@github\.com:|https?://[^/]*github\.com/)##; s#\.git$##')
+            [ -n "$repo" ] && src_url_base="https://github.com/$repo/blob" ;;
+          *) repo="$remote" ;;
+        esac
+    fi
+    [ -n "$repo" ]   && provargs+=(--repo "$repo")
+    [ -n "$branch" ] && provargs+=(--branch "$branch")
+    [ -n "$commit" ] && provargs+=(--commit "$commit")
+    u=$(src_url_for "$full_sha"); [ -n "$u" ] && provargs+=(--source-url "$u")
 fi
 if [ -z "$rev" ]; then
     rev="uncommitted"
@@ -60,7 +90,7 @@ $BOMGEN "$input" -c "$config" \
     --html "$outdir/index.html" \
     --xlsx "$outdir/${stem}_BOM.xlsx" \
     --source-rev "$rev" \
-    "${extra[@]}" "${diffargs[@]}"
+    "${extra[@]}" "${diffargs[@]}" "${provargs[@]}"
 
 # ---- historical tag builds -------------------------------------------------
 if [ "${BUILD_HISTORY:-0}" = "1" ] && [ "$have_git" = 1 ]; then
@@ -95,10 +125,17 @@ if [ "${BUILD_HISTORY:-0}" = "1" ] && [ "$have_git" = 1 ]; then
             textra=(--dashboard "$outv/dashboard.html"
                     --budget "$outv/${stem}_Budget.xlsx")
         fi
+        tprov=(--source-path "$input")
+        [ -n "$repo" ] && tprov+=(--repo "$repo")
+        tsha=$(git rev-parse "$tag^{commit}" 2>/dev/null || true)
+        if [ -n "$tsha" ]; then
+            tprov+=(--commit "$(git rev-parse --short "$tag^{commit}")")
+            u=$(src_url_for "$tsha"); [ -n "$u" ] && tprov+=(--source-url "$u")
+        fi
         if $BOMGEN "$tin" -c "$tcfg" \
                 --html "$outv/index.html" --xlsx "$outv/${stem}_BOM.xlsx" \
                 --source-rev "$label" --historical "$label" \
-                "${textra[@]}" "${tdiff[@]}"; then
+                "${textra[@]}" "${tdiff[@]}" "${tprov[@]}"; then
             built_tags+=("$tag")
         else
             echo "warning: build failed for tag '$tag'; skipped" >&2

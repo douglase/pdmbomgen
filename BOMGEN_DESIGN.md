@@ -125,6 +125,11 @@ BomNode
   is_assembly: bool    # extension == .SLDASM or has children
   cots: str            # §4.3 — verbatim from mapped column, else ""
   state: str           # from Found In (optional)
+  file_url: str        # PDM viewer link from [links] template (D9), else ""
+  material_props: dict # materials-database enrichment (D10), {} when off
+  specs: list[str]     # spec-doc refs from columns.specs cell (§5.4, D11)
+  spec: str            # primary (first) spec ref, "" when none
+  diff: str            # ""|"changed"|"added" vs --diff-against (§5.5, D12)
 ```
 
 Implementation: plain dataclass + dict index `{path: node}`; no external tree
@@ -423,14 +428,24 @@ the generator's stderr. No warnings → no banner.
 ## 8. CLI
 
 ```
-bomgen INPUT.csv [-c bomgen.toml] [--xlsx OUT.xlsx] [--html OUT.html]
-                 [--both] [--xlsx-url URL] [--source-rev REV]
-                 [-o OUTDIR] [--quiet]
+bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
+                       [--budget [OUT]] [--dashboard [OUT]]
+                       [--xlsx-url URL] [--materials-cache PATH]
+                       [--diff-against PREV] [--historical LABEL]
+                       [--source-rev REV] [--repo NAME] [--branch NAME]
+                       [--commit SHA] [--source-url URL] [--source-path PATH]
+                       [-o OUTDIR] [--quiet]
 ```
-`--xlsx-url` overrides the HTML download-button target (§5.2, D5).
-`--source-rev` embeds an opaque provenance string in both outputs (§5.1,
-§5.2, D8) — typically the input file's last git commit hash, computed by
-the caller (bomgen has no VCS dependency itself).
+- `--xlsx-url` overrides the HTML download-button target (§5.2, D5).
+- `--budget` / `--dashboard` write the spec/RFQ budget outputs (§5.4, D11).
+- `--materials-cache` overrides `[materials].cache_file` and implies
+  `enabled=true` for the run (D10).
+- `--diff-against` / `--historical` drive change highlighting and the
+  yellow historical chrome (§5.5, D12).
+- `--source-rev` plus `--repo/--branch/--commit/--source-url/--source-path`
+  feed the build-provenance record (D8, D13) — all opaque strings computed
+  by the caller (normally `scripts/build_pages.sh`); bomgen has no VCS
+  dependency itself.
 
 Single-module implementation (`bomgen/__init__.py`, matching the original
 single-file philosophy — one file of logic, no internal package split);
@@ -534,3 +549,4 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 | D10 | 2026-07-17 | Material-property enrichment (Stage B of `MATERIALS_DB_PLAN.md`). New `[materials]` config reads a committed materials-database `/export/raw-json` dump from **local disk** (never the network — keeps CI/HTML network-free) and appends chosen properties as columns, matched by Material name/synonym. `enrich_materials()` runs after `derive()`; `material_cache_key()` is the shared match contract. Off by default; missing file → V8, unmatched material → grouped V9; never aborts. The out-of-repo sync (Stage A) is unneeded when the dump is committed directly. |
 | D11 | 2026-07-19 | Spec/RFQ budget outputs (§5.4): parts categorized by a spec-document reference column (`columns.specs`, adjustable; multi-ref cells split on `[budget].spec_separator`, first wins). A spec'd node covers its subtree; uncovered leaf parts land in "(unassigned)" (V10), multi-spec V11, nested-spec V12. Budget workbook = SUMIF-linked rollup + WAG/ROM/Quote costing template (**deliberate formulas exception** to §5.1's no-formulas rule); dashboard = self-contained rollup page. CI publishing opt-in via BUILD_DASHBOARD=1. |
 | D12 | 2026-07-19 | Historical phase (§5.5): `--diff-against` green change-highlighting in **all** outputs (row identity by filename-within-parent, never Level path; report-columns-only comparison + `[diff].ignore_columns`; moves are not changes; removed parts summarized in banner). Hybrid baselines: current page vs previous commit, tag pages vs previous tag. `BUILD_HISTORY=1` rebuilds every git tag with the current generator into `v/<tag>/` (skip-on-fail), `--historical` yellow chrome, and a per-directory `versions.js` dropdown loaded as an optional sibling script so single-file copies stay fully functional. |
+| D13 | 2026-07-20 | Build-provenance block in every output: collapsible `<details>` in both page headers, a linked cell in both workbooks (BOM xlsx row 14, Budget sheet below TOTAL). Records source BOM path (hyperlinked to its blob URL at the build commit), source data rev, repo/branch/build-commit, config file, and toolchain versions (bomgen, Python, openpyxl). Git facts arrive via `--repo/--branch/--commit/--source-url/--source-path` computed by build_pages.sh from CI env vars (GitHub/GitLab) or the git remote — bomgen stays VCS-agnostic; toolchain versions are self-determined. |

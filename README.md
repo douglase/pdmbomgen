@@ -39,11 +39,17 @@ dependency.
 ## Usage
 
 ```
-bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]]
-                       [--both] [--xlsx-url URL] [--source-rev REV]
+bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
+                       [--budget [OUT]] [--dashboard [OUT]]
+                       [--xlsx-url URL] [--materials-cache PATH]
+                       [--diff-against PREV] [--historical LABEL]
+                       [--source-rev REV] [--repo NAME] [--branch NAME]
+                       [--commit SHA] [--source-url URL] [--source-path PATH]
                        [-o OUTDIR] [--quiet]
 ```
-(`python -m bomgen ...` works identically from a clone.)
+(`python -m bomgen ...` works identically from a clone. The provenance
+flags — `--source-rev/--repo/--branch/--commit/--source-url/--source-path`
+— are normally supplied by `scripts/build_pages.sh`, not typed by hand.)
 
 - **CSV** — the interactive path: PDM BOM tab → export. Tip: do **not**
   round-trip the file through Excel; Excel float-mangles two-segment item
@@ -89,6 +95,13 @@ there and design doc §6.
   piece parts); parts under no spec are reported as *(unassigned)* so
   budget gaps stay visible (warnings V10–V12). In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
+- **Build provenance** — every output records what it was built from: a
+  collapsible *Build provenance* block in the page headers and a linked
+  cell in both workbooks, listing the source BOM path (hyperlinked to the
+  file at the build commit), source data rev, repository/branch/commit,
+  config file, and toolchain versions (bomgen, Python, openpyxl). The git
+  facts come from `build_pages.sh` (CI env vars or the git remote) via
+  `--repo/--branch/--commit/--source-url`; bomgen fills in the rest.
 - **Change highlighting & historical versions** — `--diff-against PREV.csv`
   highlights rows changed/added since a previous version **green** in every
   output (removed parts are summarized in the banner); only report columns

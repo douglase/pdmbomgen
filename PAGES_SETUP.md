@@ -92,6 +92,28 @@ Notes:
 - Self-managed GitLab: an admin must have Pages configured
   (`pages_external_url` in `gitlab.rb`); everything else is identical.
 
+## Optional site features (env toggles)
+
+`scripts/build_pages.sh` honors two environment toggles, set in the CI
+config's `env:`/`variables:` block (both are ON for this repo's demo):
+
+- **`BUILD_DASHBOARD=1`** — also publish the spec/RFQ budget dashboard
+  (`dashboard.html`) and the budget workbook next to the BOM page. Needs a
+  spec-reference column mapped via `[columns].specs` in `bomgen.toml`;
+  without one, every part reports as unassigned (warning V10).
+- **`BUILD_HISTORY=1`** — rebuild **every git tag** on every run with the
+  current generator into `v/<tag>/`, with yellow historical chrome, per-tag
+  change highlighting vs the previous tag, and a version dropdown on every
+  page (written as per-directory `versions.js`). Needs full history + tags
+  in the checkout (`fetch-depth: 0` / `GIT_DEPTH: "0"`, already set) and at
+  least one pushed git tag — no tags, no dropdown. Pushing a tag triggers a
+  republish on both services (tag trigger in each CI config).
+
+The build also stamps every output with a **build-provenance** record
+(source path linked at the build commit, repo/branch/commit, toolchain
+versions) computed automatically from the CI environment — nothing to
+configure.
+
 ## Publishing more than one BOM
 
 `scripts/build_pages.sh` writes one `index.html`. For several assemblies,
