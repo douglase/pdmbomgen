@@ -125,6 +125,22 @@ git push -u origin main
   tag (`git tag v1.0 && git push origin v1.0`) to populate it. Pushing a
   tag also triggers a republish on both services.
 
+## 6d. Updating the machinery later
+
+When the pdmbomgen template gains features (CI toggles, build-script
+improvements), refresh your copy from the repo root with:
+
+```bash
+bash scripts/update_from_template.sh
+```
+
+It overwrites machinery only (build scripts, CI configs, requirements,
+SETUP.md), never your payload (`vault/`, `bomgen.toml`, `README.md`), and
+preserves your `BOM_INPUT`/`BOM_CONFIG` values. It refuses to run on a
+dirty tree or outside a vault repo, stages the changes, and leaves the
+commit to you. If pdmbomgen is private and https auth fails:
+`PDMBOMGEN_REPO=git@github.com:douglase/pdmbomgen bash scripts/update_from_template.sh`
+
 ## 7. Verify
 
 Open the published URL: the BOM should render, the **Download Excel**
