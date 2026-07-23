@@ -52,9 +52,14 @@ ignore_columns = []
 # under no spec are reported as (unassigned) so budget gaps stay visible.
 spec_separator = ";"
 # To link spec references to their controlled documents on the dashboard,
-# set in [links]:  spec_url_template = "https://docs.example.edu/{spec}"
+# set spec_url_template in [links] below.
 
 [links]
+# "spec doc ↗" link on each dashboard spec row and in the budget workbook;
+# {spec} is the URL-encoded spec reference. Point this at your document
+# control system, e.g. "https://docs.example.edu/{spec}". The demo's specs
+# are public ASTM references, so the demo just links a search for them:
+spec_url_template = "https://www.google.com/search?q={spec}"
 # Make each filename in the report a clickable link to your PDM web viewer.
 # Placeholders in the template (URL-encoded on substitution):
 #   {found_in} = the "Found In" vault folder mapped to a URL path. By default
