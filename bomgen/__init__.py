@@ -1303,6 +1303,9 @@ def write_dashboard(rollup: dict, cfg: dict, src_name: str, out: Path,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="bomgen", description=__doc__)
     ap.add_argument("input", type=Path)
+    tc = _tool_commit()
+    ap.add_argument("--version", action="version",
+                    version=f"bomgen {__version__}" + (f" ({tc})" if tc else ""))
     ap.add_argument("-c", "--config", type=Path)
     ap.add_argument("--xlsx", type=Path, nargs="?", const=True, default=None)
     ap.add_argument("--html", type=Path, nargs="?", const=True, default=None)
@@ -1381,6 +1384,29 @@ def main(argv=None) -> int:
     if not a.quiet:
         for w in warnings:
             print(f"warning: {w}", file=sys.stderr)
+        if rollup is not None:
+            # answer "why are there no spec doc links?" straight from the
+            # build log: which config was read, what the template resolved
+            # to, and how many groups actually got a link.
+            tmpl = cfg.get("links", {}).get("spec_url_template", "")
+            src_cfg = cfg.get("_config_path") or "built-in defaults"
+            n = len(rollup["specs"])
+            if not tmpl:
+                print(f"info: spec doc links OFF — [links].spec_url_template "
+                      f"is empty ({src_cfg}); dashboard spec rows will have "
+                      f"no document links", file=sys.stderr)
+            elif n == 0:
+                print(f"info: spec doc links configured "
+                      f"(spec_url_template = {tmpl!r}, {src_cfg}) but there "
+                      f"are 0 spec groups — every part is unassigned, so "
+                      f"nothing to link", file=sys.stderr)
+            else:
+                linked = sum(1 for s in rollup["specs"] if s.get("url"))
+                print(f"info: spec doc links ON "
+                      f"(spec_url_template = {tmpl!r}, {src_cfg}): "
+                      f"{linked}/{n} spec group(s) linked, e.g. "
+                      f"{next(s['url'] for s in rollup['specs'] if s.get('url'))}",
+                      file=sys.stderr)
 
     prov = {"source": a.source_path or str(a.input),
             "source_rev": a.source_rev,

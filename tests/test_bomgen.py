@@ -568,6 +568,46 @@ def test_dashboard_exposes_spec_doc_links(tmp_path):
     assert 'closest("a")) return' in page
 
 
+def test_version_flag(capsys):
+    """bomgen --version prints the version (+ pip-resolved commit when
+    installed from git) so CI logs show exactly which tool compiled."""
+    with pytest.raises(SystemExit) as e:
+        bomgen.main(["--version"])
+    assert e.value.code == 0
+    assert f"bomgen {bomgen.__version__}" in capsys.readouterr().out
+
+
+def test_spec_link_debug_line_on(tmp_path, capsys):
+    """Non-quiet dashboard builds report the effective spec_url_template and
+    how many groups got linked — the 'why are there no links?' debug aid."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n[links]\n'
+                    'spec_url_template = "https://docs.example.edu/{spec}"\n',
+                    encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf),
+                      "--dashboard", str(tmp_path / "d.html")])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "info: spec doc links ON" in err
+    assert "3/3 spec group(s) linked" in err
+    assert "https://docs.example.edu/" in err
+
+
+def test_spec_link_debug_line_off(tmp_path, capsys):
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    rc = bomgen.main([str(f), "-c", str(cfgf),
+                      "--dashboard", str(tmp_path / "d.html")])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "info: spec doc links OFF" in err
+    assert "spec_url_template" in err
+
+
 def test_dashboard_no_spec_url_template_no_links(tmp_path):
     """Empty template (default) -> no doc URLs in the page data."""
     f = tmp_path / "spec.csv"
