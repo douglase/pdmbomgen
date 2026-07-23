@@ -1179,6 +1179,21 @@ def _historical_html(label: str, current_href: str) -> str:
         'style="color:#4a3a00">view current</a></div>')
 
 
+def _tool_commit() -> str:
+    """Short git commit of the installed pdmbomgen itself. When pip installs
+    from a git URL (the requirements.txt `pdmbomgen @ git+https://...@main`
+    pattern), it records the exact resolved revision in the package's
+    dist-info/direct_url.json — so the reports can prove WHICH pdmbomgen
+    built them even though __version__ only changes at releases. Returns ""
+    for editable/sdist/wheel installs, where no VCS revision was recorded."""
+    try:
+        from importlib.metadata import distribution
+        raw = distribution("pdmbomgen").read_text("direct_url.json") or ""
+        return json.loads(raw).get("vcs_info", {}).get("commit_id", "")[:7]
+    except Exception:
+        return ""
+
+
 def _provenance_pairs(cfg: dict, prov: dict | None) -> list:
     """Build-provenance facts for the reports: which BOM file, which repo
     state, and which toolchain compiled it. Git facts (repo/branch/commit/
@@ -1198,7 +1213,8 @@ def _provenance_pairs(cfg: dict, prov: dict | None) -> list:
     if prov.get("commit"):
         pairs.append(("Build commit", prov["commit"]))
     pairs.append(("Config", cfg.get("_config_path") or "built-in defaults"))
-    pairs.append(("bomgen", __version__))
+    tc = _tool_commit()
+    pairs.append(("bomgen", f"{__version__} ({tc})" if tc else __version__))
     pairs.append(("Python", platform.python_version()))
     try:
         import openpyxl
