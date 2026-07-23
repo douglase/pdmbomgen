@@ -838,6 +838,38 @@ def test_provenance_defaults_without_git_flags(tmp_path):
     assert "Repository" not in page and "Build commit" not in page
 
 
+def test_provenance_reports_installed_tool_commit(monkeypatch):
+    """pip install from a git URL records the resolved revision in
+    direct_url.json; the bomgen provenance line must surface it —
+    __version__ alone can't distinguish two builds off main."""
+    import importlib.metadata as md
+
+    class FakeDist:
+        def read_text(self, name):
+            if name == "direct_url.json":
+                return json.dumps({
+                    "url": "https://github.com/douglase/pdmbomgen.git",
+                    "vcs_info": {"vcs": "git", "requested_revision": "main",
+                                 "commit_id":
+                                 "f77b02c5c8c2ed707240fa25530f01607237fddd"}})
+            return None
+
+    monkeypatch.setattr(md, "distribution", lambda name: FakeDist())
+    pairs = dict(bomgen._provenance_pairs(bomgen.load_config(None), None))
+    assert pairs["bomgen"] == f"{bomgen.__version__} (f77b02c)"
+
+
+def test_provenance_tool_commit_quiet_without_git_install(monkeypatch):
+    """Editable/sdist installs (and dev checkouts) have no direct_url.json
+    with vcs_info — the line falls back to the bare version, no noise."""
+    import importlib.metadata as md
+    monkeypatch.setattr(md, "distribution",
+                        lambda name: (_ for _ in ()).throw(
+                            md.PackageNotFoundError(name)))
+    pairs = dict(bomgen._provenance_pairs(bomgen.load_config(None), None))
+    assert pairs["bomgen"] == bomgen.__version__
+
+
 # ------------------------------------------------------------ materials (Stage B)
 
 MATERIALS_JSON = FIX / "materials_raw.json"
