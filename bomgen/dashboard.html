@@ -35,6 +35,7 @@ th,td{padding:4px 9px;border-bottom:1px solid var(--line);text-align:left;vertic
 th{background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 tr.spec>td{background:var(--asm);font-weight:600;cursor:pointer}
 tr.spec.unassigned>td{background:var(--hit)}
+tr.spec a.doc{font-weight:400;font-size:11.5px;color:var(--accent);margin-left:8px;white-space:nowrap}
 tr.chg>td{background:#e2efda}
 tr.hit>td{background:var(--hit)}
 #verbox select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff}
@@ -97,7 +98,7 @@ function render() {
   tb.innerHTML = groups.map((g, gi) => {
     const un = g.name === "(unassigned)";
     const bar = `<span class="sharewrap"><span class="share" style="width:${Math.round(70 * g.totalQty / maxQty)}px"></span></span>`;
-    const doc = g.url ? ` <a href="${esc(g.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">spec doc</a>` : "";
+    const doc = g.url ? ` <a class="doc" href="${esc(g.url)}" target="_blank" rel="noopener">spec doc&nbsp;&#8599;</a>` : "";
     const head = `<tr class="spec${un ? " unassigned" : ""}" data-g="${gi}">
       <td colspan="2"><span class="tg">${g.open ? "▾" : "▸"}</span>${esc(g.name)}${doc}</td>
       <td class="muted" colspan="2">${g.lines.length} item${g.lines.length === 1 ? "" : "s"}</td>
@@ -142,6 +143,7 @@ function applyVisibility() {
   document.getElementById("count").textContent = `${shown}/${total} line items`;
 }
 tb.addEventListener("click", e => {
+  if (e.target.closest("a")) return;  // links (spec doc, PDM files) navigate, never toggle
   const tr = e.target.closest("tr.spec"); if (!tr) return;
   const g = groups[+tr.dataset.g]; g.open = !g.open; render();
 });

@@ -542,6 +542,45 @@ def test_budget_spec_url_template(tmp_path):
     assert urls["SPEC-MACH-002"] == "https://docs.example.edu/SPEC-MACH-002"
 
 
+def test_dashboard_exposes_spec_doc_links(tmp_path):
+    """End-to-end: spec_url_template lands in the dashboard page — the URL is
+    embedded in the page data, the 'spec doc' anchor markup renders it, and
+    clicking the link must NOT toggle the group (the delegated collapse
+    handler bails on clicks that originate on any <a>)."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n[links]\n'
+                    'spec_url_template = "https://docs.example.edu/{spec}"\n',
+                    encoding="utf-8")
+    out = tmp_path / "dash.html"
+    rc = bomgen.main([str(f), "-c", str(cfgf),
+                      "--dashboard", str(out), "--quiet"])
+    assert rc == 0
+    page = out.read_text(encoding="utf-8")
+    # url exposed in the embedded rollup JSON, one per spec'd group
+    for spec in ("SPEC-WELD-001", "SPEC-MACH-002", "SPEC-HDWE-003"):
+        assert f"https://docs.example.edu/{spec}" in page
+    # the anchor markup that renders g.url as a visible link
+    assert 'class="doc"' in page and "spec doc" in page
+    # regression: clicking the link used to collapse the group instead of
+    # navigating — the toggle handler must ignore clicks on links
+    assert 'closest("a")) return' in page
+
+
+def test_dashboard_no_spec_url_template_no_links(tmp_path):
+    """Empty template (default) -> no doc URLs in the page data."""
+    f = tmp_path / "spec.csv"
+    f.write_text(SPEC_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    out = tmp_path / "dash.html"
+    rc = bomgen.main([str(f), "-c", str(cfgf),
+                      "--dashboard", str(out), "--quiet"])
+    assert rc == 0
+    assert "docs.example.edu" not in out.read_text(encoding="utf-8")
+
+
 def test_budget_workbook_structure(tmp_path):
     rollup, warnings = _spec_rollup(tmp_path)
     cfg = bomgen.load_config(None)
