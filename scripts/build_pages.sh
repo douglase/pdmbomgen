@@ -25,6 +25,11 @@ stem=$(basename "$input")
 stem=${stem%.*}
 BOMGEN=${BOMGEN:-"python -m bomgen"}   # template-repo overrides to `bomgen`
 
+# Say up front exactly which pdmbomgen compiles this build — the version
+# alone only moves at releases; the (commit) suffix is the resolved git
+# revision pip installed, which is what actually changes run to run.
+echo "compiler: $($BOMGEN --version)"
+
 extra=()
 if [ "${BUILD_DASHBOARD:-0}" = "1" ]; then
     extra=(--dashboard "$outdir/dashboard.html"
