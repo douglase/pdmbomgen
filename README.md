@@ -81,20 +81,27 @@ there and design doc §6.
   `…/solidworkspdm/Vault/STP/ESC/Flight`. Empty (default) leaves filenames
   as plain text. HTML links the filename in the Part Name; Excel makes the
   Part Name cell a hyperlink.
-- **Spec/RFQ budget** — flag parts into procurement categories by putting a
-  spec-document reference in a column of the export (mapped by
-  `[columns] specs = "Specs"` — adjustable like every column; several refs
-  per cell separated by `[budget].spec_separator`, first wins). Then
+- **Spec/RFQ budget** — flag parts into procurement categories either with
+  a committed **specs table** (`[budget].specs_file`, `File,Spec[,Note]`
+  rows keyed by filename — the PDM export needs no change, and the table
+  wins over any export column) or with a spec-reference column in the
+  export (mapped by `[columns] specs = "Specs"`; several refs per cell
+  separated by `[budget].spec_separator`, first wins). Spec-level dollars
+  live in a committed **costs table** (`[budget].costs_file`,
+  `Spec,WAG,ROM,Quote[,Note]`; Best = Quote, else ROM, else WAG). Then
   `bomgen INPUT.csv --budget --dashboard` writes:
-  - a **budget workbook**: a per-spec rollup sheet formula-linked to a
-    Parts costing template where you type unit WAG / ROM / Quote costs
-    (Best = Quote, else ROM, else WAG; everything rolls up live), and
-  - a **dashboard page**: the BOM grouped by spec with stat tiles,
+  - a **budget workbook**: the spec-level cost model — WAG/ROM/Quote input
+    cells prefilled from the costs table, a live Best chain, and a Parts
+    sheet listing what each spec covers, and
+  - a **dashboard page**: the BOM grouped by spec with stat tiles
+    (including Budget (Best) and Specs costed), per-spec Best dollars,
     filtering, and a download button for the workbook.
   A spec'd row covers its whole subtree (a quoted weldment includes its
   piece parts); parts under no spec are reported as *(unassigned)* so
-  budget gaps stay visible (warnings V10–V12). In CI, set
+  budget gaps stay visible (warnings V10–V16). In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
+  To keep the cost model in its **own repo** (CI clones the vault repo for
+  the BOM), start from `template-budget-repo/`.
 - **Build provenance** — every output records what it was built from: a
   collapsible *Build provenance* block in the page headers and a linked
   cell in both workbooks, listing the source BOM path (hyperlinked to the

@@ -82,7 +82,21 @@ if [ "$have_git" = 1 ]; then
     [ -n "$repo" ]   && provargs+=(--repo "$repo")
     [ -n "$branch" ] && provargs+=(--branch "$branch")
     [ -n "$commit" ] && provargs+=(--commit "$commit")
-    u=$(src_url_for "$full_sha"); [ -n "$u" ] && provargs+=(--source-url "$u")
+    u=${BOM_SOURCE_URL:-$(src_url_for "$full_sha")}
+    [ -n "$u" ] && provargs+=(--source-url "$u")
+fi
+# Overrides for when INPUT lives OUTSIDE this repo's history (the separate
+# budget-repo pattern clones the vault repo at build time, so this repo's
+# git can't see the input's commits — the CI computes them from the clone):
+#   BOM_SOURCE_REV  e.g. "$(git -C vault-src log -1 --format='%h (%ad)' --date=short -- path)"
+#   BOM_SOURCE_URL  blob URL of the input at that revision (used above)
+#   BOM_PREV_FILE   previous version of the input, for green change-highlighting
+rev=${BOM_SOURCE_REV:-$rev}
+if [ "$have_git" = 0 ] && [ -n "${BOM_SOURCE_URL:-}" ]; then
+    provargs+=(--source-url "$BOM_SOURCE_URL")
+fi
+if [ -n "${BOM_PREV_FILE:-}" ] && [ -f "$BOM_PREV_FILE" ]; then
+    diffargs=(--diff-against "$BOM_PREV_FILE")
 fi
 if [ -z "$rev" ]; then
     rev="uncommitted"

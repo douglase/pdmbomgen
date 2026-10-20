@@ -98,9 +98,14 @@ Notes:
 config's `env:`/`variables:` block (both are ON for this repo's demo):
 
 - **`BUILD_DASHBOARD=1`** — also publish the spec/RFQ budget dashboard
-  (`dashboard.html`) and the budget workbook next to the BOM page. Needs a
-  spec-reference column mapped via `[columns].specs` in `bomgen.toml`;
-  without one, every part reports as unassigned (warning V10).
+  (`dashboard.html`) and the budget workbook next to the BOM page. Spec
+  assignments come from a committed specs table (`[budget].specs_file`,
+  `File,Spec` rows — no PDM change needed) and/or a spec-reference column
+  mapped via `[columns].specs`; dollars come from a committed costs table
+  (`[budget].costs_file`, `Spec,WAG,ROM,Quote`). Without either specs
+  source, every part reports as unassigned (warning V10). For the
+  separate-cost-repo pattern (tables in their own GitLab repo, BOM cloned
+  from the vault repo at build time) see `template-budget-repo/README.md`.
 - **`BUILD_HISTORY=1`** — rebuild **every git tag** on every run with the
   current generator into `v/<tag>/`, with yellow historical chrome, per-tag
   change highlighting vs the previous tag, and a version dropdown on every

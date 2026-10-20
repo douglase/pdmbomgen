@@ -36,6 +36,8 @@ th{background:#efece6;font-size:12px;text-transform:uppercase;letter-spacing:.03
 tr.spec>td{background:var(--asm);font-weight:600;cursor:pointer}
 tr.spec.unassigned>td{background:var(--hit)}
 tr.spec a.doc{font-weight:400;font-size:11.5px;color:var(--accent);margin-left:8px;white-space:nowrap}
+td.cost{font-variant-numeric:tabular-nums;white-space:nowrap}
+.nocost{color:#8a5a00;font-weight:400;font-size:11.5px}
 tr.chg>td{background:#e2efda}
 tr.hit>td{background:var(--hit)}
 #verbox select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff}
@@ -71,16 +73,25 @@ __WARNBOX__
 </div>
 <table id="t"><thead><tr>
   <th>Spec / Part Number</th><th>Part Name</th><th>Config</th><th>COTS</th>
-  <th>Qty (Total)</th><th>Uses</th>
+  <th>Qty (Total)</th><th>Uses</th><th id="costh">Cost (Best)</th>
 </tr></thead><tbody id="tb"></tbody></table>
-<footer>Costs are entered and rolled up in the budget workbook — this page shows
-what each spec covers. Static snapshot; regenerate from PDM for current data.</footer>
+<footer>Best-estimate dollars come from the committed costs file (Best = Quote,
+else ROM, else WAG); line-item detail and what-ifs live in the budget workbook.
+Static snapshot; regenerate from PDM for current data.</footer>
 <script>
 const DATA = /*__DATA__*/;
 const groups = DATA.specs.concat(DATA.unassigned.lines.length ? [DATA.unassigned] : []);
 groups.forEach(g => g.open = true);
 const maxQty = Math.max(1, ...groups.map(g => g.totalQty));
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const COSTED = !!DATA.costed;
+if (!COSTED) document.getElementById("costh").remove();
+const fmt$ = v => v == null ? "" :
+  "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+const costTip = g => !g.cost ? "no entry in the costs file" :
+  ["wag", "rom", "quote"].filter(k => g.cost[k] != null)
+    .map(k => `${k.toUpperCase()} ${fmt$(g.cost[k])}`).join(" · ") +
+  (g.cost.note ? ` — ${g.cost.note}` : "");
 
 // stat tiles
 const tiles = [
@@ -89,6 +100,12 @@ const tiles = [
   {v: DATA.counts.totalQty, l: "Total part qty"},
   {v: DATA.counts.unassignedLines, l: "Unassigned parts", warn: DATA.counts.unassignedLines > 0},
 ];
+if (COSTED) {
+  tiles.splice(1, 0,
+    {v: fmt$(DATA.counts.totalBest), l: "Budget (Best)"},
+    {v: `${DATA.counts.costedSpecs}/${DATA.counts.specs}`, l: "Specs costed",
+     warn: DATA.counts.costedSpecs < DATA.counts.specs});
+}
 if (DATA.diffed) tiles.push({v: DATA.counts.changed, l: "Changed vs previous"});
 document.getElementById("tiles").innerHTML = tiles.map(t =>
   `<div class="tile${t.warn ? " warn" : ""}"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join("");
@@ -99,10 +116,12 @@ function render() {
     const un = g.name === "(unassigned)";
     const bar = `<span class="sharewrap"><span class="share" style="width:${Math.round(70 * g.totalQty / maxQty)}px"></span></span>`;
     const doc = g.url ? ` <a class="doc" href="${esc(g.url)}" target="_blank" rel="noopener">spec doc&nbsp;&#8599;</a>` : "";
+    const costTd = !COSTED ? "" : `<td class="num cost" title="${esc(costTip(g))}">` +
+      (g.cost ? fmt$(g.cost.best) : (un ? "" : "<span class=\"nocost\">uncosted</span>")) + "</td>";
     const head = `<tr class="spec${un ? " unassigned" : ""}" data-g="${gi}">
       <td colspan="2"><span class="tg">${g.open ? "▾" : "▸"}</span>${esc(g.name)}${doc}</td>
       <td class="muted" colspan="2">${g.lines.length} item${g.lines.length === 1 ? "" : "s"}</td>
-      <td class="num">${bar}${g.totalQty}</td><td></td></tr>`;
+      <td class="num">${bar}${g.totalQty}</td><td></td>${costTd}</tr>`;
     const rows = g.lines.map((l, li) => {
       const file = l.fileUrl
         ? `<a href="${esc(l.fileUrl)}" target="_blank" rel="noopener">${esc(l.file)}</a>` : esc(l.file);
@@ -115,7 +134,7 @@ function render() {
         <td>${nm}</td><td class="pn">${esc(l.config)}</td>
         <td>${l.cots ? '<span class="badge">' + esc(l.cots) + "</span>" : ""}</td>
         <td class="num">${l.qty}</td>
-        <td class="num muted">${l.occ > 1 ? l.occ + "×" : ""}</td></tr>`;
+        <td class="num muted">${l.occ > 1 ? l.occ + "×" : ""}</td>${COSTED ? "<td></td>" : ""}</tr>`;
     }).join("");
     return head + rows;
   }).join("");

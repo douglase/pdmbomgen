@@ -1,0 +1,62 @@
+# Publish this project's spec/RFQ budget to GitLab Pages: the dashboard,
+# the BOM page, and the downloadable budget workbook, built from
+#   - specs.csv / costs.csv committed HERE (the cost model), and
+#   - the BOM export cloned at build time from the VAULT repo (the geometry
+#     truth stays where PDM exports it; this repo never copies it).
+#
+# One-time setup (see README.md):
+#   1. Set VAULT_REPO_URL + VAULT_BOM_PATH below (or in Settings > CI/CD >
+#      Variables). For a private vault repo on the SAME GitLab instance,
+#      https://gitlab-ci-token:${CI_JOB_TOKEN}@<host>/<group>/<vault>.git
+#      works once the vault project allowlists this project under
+#      Settings > CI/CD > Job token permissions.
+#   2. Add a weekly Pipeline schedule (Build > Pipeline schedules) so cost
+#      pages track vault commits and upstream pdmbomgen fixes without anyone
+#      pushing here.
+
+variables:
+  GIT_DEPTH: "0"
+
+pages:
+  image: python:3.12-slim
+  variables:
+    VAULT_REPO_URL: ""                  # REQUIRED, e.g. https://gitlab.example.edu/group/my-vault-bom.git
+    VAULT_BOM_PATH: vault/PLACEHOLDER_pdmout.csv   # BOM export path inside the vault repo
+    BOM_CONFIG: bomgen.toml
+    BUILD_DASHBOARD: "1"
+    # Tag rebuilds (BUILD_HISTORY) are off here: a tag of THIS repo pins the
+    # cost model but not the vault clone, so historical pages would mix old
+    # costs with today's BOM. Revisit if the vault clone gains pinning.
+    BUILD_HISTORY: "0"
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+      >/dev/null
+    # Private pdmbomgen (the tool) support — same PDMBOMGEN_TOKEN mechanism
+    # as the vault template; no-op when pdmbomgen is public.
+    - |
+      if [ -n "${PDMBOMGEN_TOKEN:-}" ]; then
+        git config --global url."https://oauth2:${PDMBOMGEN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      fi
+  script:
+    - test -n "$VAULT_REPO_URL" || { echo "set VAULT_REPO_URL (where the BOM export lives)"; exit 1; }
+    - git clone --quiet --depth 50 "$VAULT_REPO_URL" vault-src
+    - test -f "vault-src/$VAULT_BOM_PATH" || { echo "no $VAULT_BOM_PATH in the vault repo — fix VAULT_BOM_PATH"; exit 1; }
+    # Provenance + change-highlighting come from the VAULT clone's history,
+    # not this repo's (build_pages.sh takes them as overrides):
+    - export BOM_SOURCE_REV="$(git -C vault-src log -1 --format='%h (%ad)' --date=short -- "$VAULT_BOM_PATH")"
+    - |
+      vault_web="${VAULT_REPO_URL%.git}"
+      vault_web="$(echo "$vault_web" | sed -E 's#(https?://)[^/@]*@#\1#')"   # strip embedded credentials
+      export BOM_SOURCE_URL="$vault_web/-/blob/$(git -C vault-src rev-parse HEAD)/$VAULT_BOM_PATH"
+      prev=$(git -C vault-src log -2 --format=%H -- "$VAULT_BOM_PATH" | sed -n 2p)
+      if [ -n "$prev" ] && git -C vault-src show "$prev:$VAULT_BOM_PATH" > prev_bom; then
+        export BOM_PREV_FILE="$PWD/prev_bom"
+      fi
+    - pip install -r requirements.txt
+    - bash scripts/build_pages.sh "vault-src/$VAULT_BOM_PATH" "$BOM_CONFIG" public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

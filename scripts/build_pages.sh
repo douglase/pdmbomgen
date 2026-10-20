@@ -51,10 +51,18 @@ trap 'rm -rf "$tmp"' EXIT
 # Build-provenance facts: repo name, branch, commit, and a source-file link.
 # CI env vars are authoritative when present (GitHub Actions / GitLab CI);
 # otherwise derived from the local git remote where possible.
+#
+# When INPUT lives OUTSIDE this repo's history (the separate budget-repo
+# pattern, which clones the vault repo at build time — see
+# template-budget-repo/), this script's own git can't see the input's
+# commits, so the caller computes them from the clone and overrides:
+#   BOM_SOURCE_REV  e.g. "$(git -C vault-src log -1 --format='%h (%ad)' --date=short -- path)"
+#   BOM_SOURCE_URL  blob URL of the input at that revision (dashboard/xlsx link)
+#   BOM_PREV_FILE   previous version of the input, for green change-highlighting
 src_url_for() { [ -n "$src_url_base" ] && echo "$src_url_base/$1/$input" || true; }
+rev=""
 if [ "$have_git" = 1 ]; then
     rev=$(git log -1 --format='%h (%ad)' --date=short -- "$input" 2>/dev/null || true)
-    [ -n "$rev" ] && srcargs=(--source-rev "$rev")
     prev_commit=$(git log -2 --format=%H -- "$input" 2>/dev/null | sed -n 2p)
     if [ -n "$prev_commit" ] && git show "$prev_commit:$input" \
             > "$tmp/prev_input" 2>/dev/null; then
@@ -83,7 +91,13 @@ if [ "$have_git" = 1 ]; then
     [ -n "$repo" ]     && srcargs+=(--repo "$repo")
     [ -n "$branch" ]   && srcargs+=(--branch "$branch")
     [ -n "$commit" ]   && srcargs+=(--commit "$commit")
-    u=$(src_url_for "$full_sha"); [ -n "$u" ] && srcargs+=(--source-url "$u")
+fi
+rev=${BOM_SOURCE_REV:-$rev}
+[ -n "$rev" ] && srcargs+=(--source-rev "$rev")
+u=${BOM_SOURCE_URL:-$([ "$have_git" = 1 ] && src_url_for "${full_sha:-}" || true)}
+[ -n "$u" ] && srcargs+=(--source-url "$u")
+if [ -n "${BOM_PREV_FILE:-}" ] && [ -f "$BOM_PREV_FILE" ]; then
+    diffargs=(--diff-against "$BOM_PREV_FILE")
 fi
 
 mkdir -p "$outdir"

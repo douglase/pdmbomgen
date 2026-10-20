@@ -118,8 +118,12 @@ git push -u origin main
 ## 6c. Optional features (env toggles, preset in both CI configs)
 
 - `BUILD_DASHBOARD=1` (default here) — publishes the spec/RFQ budget
-  dashboard + workbook; map your spec column via `[columns].specs` in
-  `bomgen.toml` or every part reports as unassigned.
+  dashboard + workbook; assign specs via a committed `File,Spec` table
+  (`[budget].specs_file` in `bomgen.toml` — no PDM change needed) or map a
+  spec column via `[columns].specs`, else every part reports as unassigned.
+  Spec-level dollars come from a `Spec,WAG,ROM,Quote` table
+  (`[budget].costs_file`). To keep the cost model in its own repo instead,
+  see `template-budget-repo/` in the pdmbomgen repo.
 - `BUILD_HISTORY=1` (default here) — rebuilds every git tag into
   `v/<tag>/` with yellow historical chrome and a version dropdown; push a
   tag (`git tag v1.0 && git push origin v1.0`) to populate it. Pushing a

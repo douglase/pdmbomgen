@@ -1,0 +1,8 @@
+File,Spec,Note
+NCC-FA004.SLDASM,RFQ-WELD-001,injector mount weldment — one quote covers the subtree
+NCC-FP005.SLDPRT,RFQ-MACH-001,
+NCC-FP006.SLDPRT,RFQ-MACH-001,
+NCC-FP007.SLDPRT,RFQ-MACH-001,
+92423A461_High-Strength Duranium Socket Head Screw.SLDPRT,RFQ-HDWE-001,COTS fastener buy
+96246A074_Duranium Helical Insert_ENT.SLDPRT,RFQ-HDWE-001,
+NCC-FP099.SLDPRT,RFQ-MACH-001,stale on purpose: not in the current export (demos V13)

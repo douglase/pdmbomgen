@@ -35,10 +35,10 @@ jobs:
       # policy meta-textually (they quote license names/identifiers in
       # prose) — without --ignore on those, scancode would match the
       # literal strings as if the docs/script were themselves licensed
-      # under them. template-repo/** intentionally carries no SPDX headers
-      # (it becomes a different repo's content once copied out — see
-      # LICENSE-NOTES.md), so it's excluded to avoid "no license detected"
-      # noise on every scan. examples/NCC-1701_pdmout_BOM.xlsx/.html are
+      # under them. template-repo/** and template-budget-repo/** intentionally
+      # carry no SPDX headers (they become a different repo's content once
+      # copied out — see LICENSE-NOTES.md), so they're excluded to avoid
+      # "no license detected" noise on every scan. examples/*.xlsx/.html are
       # deliberately left IN scope (not ignored) — they're generated
       # output with no vendored third-party license text and should scan
       # clean; don't "fix" that by adding an ignore for them.
@@ -49,6 +49,7 @@ jobs:
             --ignore 'LICENSE-NOTES.md' \
             --ignore 'scripts/check_scancode_allowlist.py' \
             --ignore 'template-repo/**' \
+            --ignore 'template-budget-repo/**' \
             --ignore '**/__pycache__/**' \
             --ignore '.pytest_cache/**' \
             --ignore 'build/**' \
