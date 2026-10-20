@@ -29,6 +29,87 @@ cost roll-up, mass roll-up (see §10 Future Work).
   Bommer) — confirm the niche; closed source.
 - No open-source PDM-CSV-specific parser found → clean-room implementation.
 
+### 1.1 Data flow at a glance
+
+Who hands what to whom, across the three repos (§8.1, D7/D14) and down
+through one CI build:
+
+```
+                     SolidWorks PDM (CAD truth)
+                           │  CSV/XML export, committed by hand
+                           ▼
+┌─ vault repo (the geometry) ─────┐
+│  vault/<export>.csv             │ git clone at CI time (read-only)
+│  bomgen.toml                    ├─────────────────────────────────────┐
+│  CI config +                    │                                     ▼
+│  scripts/build_pages.sh         │  ┌─ budget repo (the cost model) ────────┐
+└───────────────┬─────────────────┘  │  vault-src/<export>.csv   (the clone) │
+                │                    │  specs.csv    File → Spec             │
+                │ push / tag /       │  costs.csv    Spec → WAG/ROM/Quote    │
+                │ weekly schedule    │  bomgen.toml  [budget].*_file         │
+                │ runs its CI        │  CI config +                          │
+                │                    │  scripts/build_pages.sh               │
+                │                    └───────────────┬───────────────────────┘
+                │                                    │ its CI also computes
+                │                                    │ BOM_SOURCE_REV / _URL,
+                │                                    │ BOM_PREV_FILE from the
+                │                                    │ clone's git history
+                ▼                                    ▼
+   CI job (.gitlab-ci.yml / pages.yml):
+     pip install pdmbomgen @main   ◄── pdmbomgen repo (this one): the
+                │                      bomgen package + template.html +
+                ▼                      dashboard.html ride along inside it
+   scripts/build_pages.sh  INPUT CONFIG OUTDIR
+     · echoes which tool compiles ("compiler: bomgen 0.1.0 (<commit>)")
+     · git facts → --source-rev --repo --branch --commit --source-url
+       (or the BOM_* env overrides above, when INPUT lives in the clone)
+     · previous revision of INPUT → --diff-against (green highlighting)
+     · BUILD_HISTORY=1: git-archives each tag, reruns bomgen per tag
+                │  one bomgen invocation per page set
+                ▼
+   bomgen CLI (pipeline below)
+                │
+                ▼
+   OUTDIR/  index.html · <stem>_BOM.xlsx · dashboard.html ·
+            <stem>_Budget.xlsx · versions.js · v/<tag>/…
+                │  uploaded as the Pages artifact
+                ▼
+   GitHub Pages / GitLab Pages   (outputs cross-link by relative
+   sibling hrefs, so the same files work on any host or file://)
+```
+
+Inside one bomgen invocation (`main()`), in execution order — side inputs
+join the chain where they are consumed:
+
+```
+   INPUT.csv/.xml           bomgen.toml ──► load_config
+         │                                       │ cfg (everything below)
+         ▼                                       ▼
+   read_csv / read_xml ──rows+header──► build_tree   (V1–V6, R1)
+                                            │ tree of BomNode
+                                            ▼
+                                         derive     qty roll-up, part numbers,
+                                            │       COTS, PDM file links,
+                                            │       specs from the export col
+   PREV export ─────────────────────► apply_diff    (row identity: filename
+   (--diff-against, from build_pages)       │        within parent, D12)
+   materials dump ──────────────► enrich_materials  (V8–V9)
+   ([materials].cache_file)                 │
+   specs.csv ──► read_spec_table ► apply_spec_table (V13–V14; the table
+   ([budget].specs_file)                    │        wins over the column)
+   costs.csv ──► read_cost_table ───────────┤
+   ([budget].costs_file)                    ▼
+                                      budget_rollup (V10–V12, V15–V16;
+                                            │        cost + Best per spec)
+         ┌───────────────┬──────────────────┼────────────────────┐
+         ▼               ▼                  ▼                    ▼
+    write_excel      write_html     write_budget_xlsx     write_dashboard
+   <stem>_BOM.xlsx   index.html    <stem>_Budget.xlsx     dashboard.html
+                  (template.html)   (W/R/Q prefilled       (dashboard.html
+                                     from costs.csv)        template)
+         └── every output carries the warning banner + provenance block ──┘
+```
+
 ---
 
 ## 2. Input Format Specification
