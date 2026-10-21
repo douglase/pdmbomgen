@@ -1,34 +1,38 @@
-# Using the spec & budget features — a worked guide
+# Build a budget by specification
 
-How to group a BOM into RFQ/procurement categories ("specs"), attach
-dollars and export-control facts to them, and publish the result as a
-dashboard + budget workbook. Design rationale lives in `BOMGEN_DESIGN.md`
-§5.4/D14; this is the how-to.
+This guide shows you how to group a BOM into procurement categories
+("specs"), attach dollars and export-control facts to each category, and
+publish the result as a dashboard and a costing workbook. For the design
+rationale, see `BOMGEN_DESIGN.md` §5.4 and decision D14.
 
-## The 60-second version
+## Quick start
+
+Describe your categories in two CSV files and pass them to bomgen:
 
 ```bash
 # specs.csv : which category each CAD file belongs to
-# costs.csv : what each category costs (and anything else per category)
+# costs.csv : what each category costs, plus anything else you track per category
 bomgen vault/export.csv --dashboard --budget \
     --specs-csv specs.csv --costs-csv costs.csv
 # -> <stem>_Dashboard.html + <stem>_Budget.xlsx
 ```
 
-Or configure once in `bomgen.toml` and drop the flags:
+To avoid typing the flags every time, configure the paths once in
+`bomgen.toml`:
 
 ```toml
 [budget]
-specs_file = "specs.csv"   # paths relative to this toml file
+specs_file = "specs.csv"   # paths are relative to this toml file
 costs_file = "costs.csv"
 ```
 
-In CI, `BUILD_DASHBOARD=1` makes `scripts/build_pages.sh` publish both
-next to the BOM page (as `dashboard.html`).
+In CI, setting `BUILD_DASHBOARD=1` makes `scripts/build_pages.sh` publish
+the dashboard (as `dashboard.html`) and the workbook next to the BOM page.
 
-## 1. Assigning specs — `specs.csv`
+## Step 1: Assign specs in specs.csv
 
-One row per CAD file → category. The PDM export needs **no** specs column.
+Each row maps one CAD file to a category. The PDM export itself needs no
+specs column.
 
 ```csv
 File,Spec,Note
@@ -38,34 +42,36 @@ NCC-FP006.SLDPRT,RFQ-MACH-001,
 92423A461_Screw.SLDPRT,RFQ-HDWE-001,COTS fastener buy
 ```
 
-Rules that matter:
+How assignment works:
 
-- **A spec'd assembly covers its whole subtree.** Assign the weldment
-  assembly one row and every piece part under it is covered — you do not
-  list them. This is why a few rows can cover hundreds of parts: start
+- **An assembly's spec covers its whole subtree.** Assign a weldment
+  assembly one row and every piece part under it is covered — you don't
+  list them individually. A few rows can cover hundreds of parts: start
   with the big quoted assemblies and watch the dashboard's *Unassigned
   parts* tile drop.
-- **Matching is by filename**, whitespace/case-insensitive, against the
-  export's `Number` column (e.g. `NCC-FA004.SLDASM`).
-- **Leaf parts covered by nothing** land in the *(unassigned)* group
+- **Matching is by filename** (for example `NCC-FA004.SLDASM`), ignoring
+  case and extra whitespace, against the export's `Number` column.
+- **Parts that nothing covers** appear in the *(unassigned)* group
   (warning V10) — a visible budget gap, never a silent one.
-- **Several rows for one file** = multi-spec; the first listed is the
-  budget category (V11). A spec'd item *inside* another spec'd subtree is
-  allowed but flagged (V12 — possible double-counted cost).
-- **Rows naming files that left the BOM** warn (V13) so the table can't
-  silently rot. If the export *also* has a specs column, the table wins on
-  any conflict (V14).
+- **Several rows for one file** make it multi-spec; the first row listed
+  is the budget category (warning V11). A spec'd item inside another
+  spec'd subtree is allowed but flagged (warning V12 — a possible
+  double-counted cost).
+- **Rows naming files that left the BOM** warn (V13), so the table can't
+  silently go stale. If the export also has a specs column, the table
+  wins on any conflict (warning V14).
 
-Alternative without a table: put the reference in a column of the export
-itself and map it with `[columns] specs = "YourHeader"` (several refs per
-cell split on `[budget].spec_separator`, first wins). The demo site uses
-both at once: its `Material Specification` column plus
-`examples/NCC-1701_specs.csv`.
+If you'd rather not keep a table, you can put the reference in a column
+of the export itself and map it with `[columns] specs = "YourHeader"`
+(several references per cell split on `[budget].spec_separator`; the
+first wins). The demo site uses both at once: its `Material
+Specification` column plus `examples/NCC-1701_specs.csv`.
 
-## 2. Costing specs — `costs.csv`
+## Step 2: Cost specs in costs.csv
 
-One row per spec. Spec-level, not per-part: a category gets one
-WAG/ROM/Quote set.
+Each row costs one spec. Costing is per category, not per part: a
+category gets one WAG/ROM/Quote set (wild guess, rough order of
+magnitude, vendor quote).
 
 ```csv
 Spec,WAG,ROM,Quote,Note,Hardware,Technology,Software,Intent to Publish Research Product Design,Existing Publication,Rationale,Vendor
@@ -74,73 +80,83 @@ RFQ-MACH-001,12000,,,WAG pending drawing release,EAR99,,,Yes,,machined from publ
 RFQ-HDWE-001,,,1840.50,McMaster cart quote,EAR99,,,,doi:10.5555/ncc1701,catalog COTS fasteners,McMaster-Carr
 ```
 
-- **Best = Quote, else ROM, else WAG** — fill whatever maturity you have;
-  the weldment above reports $18,500 (its ROM beats its WAG) until a
-  quote lands.
-- `$12,000`-style values parse; unparseable ones (e.g. `TBD`) warn (V15)
-  and read as blank. Duplicate spec rows warn; first wins.
-- A spec with **no row** here warns (V16) and shows "uncosted" on the
-  dashboard, so the *Budget (Best)* total is never quietly incomplete.
-  A row naming a spec with no parts also warns (V16 — stale).
-- **Every column beyond `Spec,WAG,ROM,Quote,Note` passes through** to the
-  Budget sheet verbatim, in file order. The templates ship the
-  export-control review set — *Hardware / Technology / Software / Intent
-  to Publish Research Product Design / Existing Publication / Rationale /
-  Vendor* — but any column works (add `Lead Time`, get a Lead Time
-  column). No config, no code change.
+How costing works:
 
-## 3. What comes out
+- **Best = Quote, else ROM, else WAG.** Fill in whatever maturity you
+  have. The weldment above reports $18,500 — its ROM beats its WAG —
+  until a quote lands.
+- Values like `$12,000` parse; values that don't parse (such as `TBD`)
+  warn (V15) and read as blank. Duplicate spec rows warn; the first wins.
+- A spec with no row here warns (V16) and shows **uncosted** on the
+  dashboard, so the *Budget (Best)* total is never quietly incomplete. A
+  row naming a spec that no longer has parts also warns (V16).
+- **Every column beyond `Spec,WAG,ROM,Quote,Note` passes through** to the
+  workbook's Budget sheet, in file order. The templates ship the
+  export-control review set — *Hardware*, *Technology*, *Software*,
+  *Intent to Publish Research Product Design*, *Existing Publication*,
+  *Rationale*, *Vendor* — but any column works: add `Lead Time` to the
+  CSV and a Lead Time column appears, with no configuration change.
+
+## What bomgen produces
 
 **Dashboard** (`--dashboard`, published as `dashboard.html`):
-- Tiles: Specs · **Budget (Best)** · **Specs costed n/m** · RFQ line
-  items · Total part qty · Unassigned parts (+ Changed vs previous on
-  diffed builds).
-- One collapsible group per spec: Cost (Best) on the row, with
+
+- Summary tiles: Specs, **Budget (Best)**, **Specs costed n/m**, RFQ line
+  items, total part quantity, unassigned parts, and — on diffed builds —
+  changed vs previous.
+- One collapsible group per spec, with Cost (Best) on the row.
   WAG/ROM/Quote, the note, and the passthrough fields (export control,
-  vendor, …) in the hover tooltip; "spec doc ↗" link when
-  `[links].spec_url_template` is set (`{spec}` is URL-encoded), e.g.
-  `spec_url_template = "https://docs.example.edu/{spec}"`.
+  vendor, and so on) appear in the hover tooltip. When
+  `[links].spec_url_template` is set, each group links its controlled
+  document ("spec doc ↗"); `{spec}` in the template is URL-encoded, for
+  example `spec_url_template = "https://docs.example.edu/{spec}"`.
 - Download buttons for the budget workbook and the BOM page.
 
 **Budget workbook** (`--budget`, `<stem>_Budget.xlsx`):
-- *Budget* sheet — the cost model: one row per spec with `Spec | Line
-  Items | Total Qty | WAG | ROM | Quote | Best | Note | <your passthrough
-  columns> | Spec Document`. WAG/ROM/Quote are shaded cells prefilled
-  from `costs.csv`; Best and the TOTAL row are live formulas, so what-ifs
-  typed in Excel roll up immediately. **Edits persist only when copied
-  back into `costs.csv`** — every build regenerates the workbook.
-- *Parts* sheet — what each spec covers (spec, part number, name, config,
-  COTS, rolled-up qty, use count), green-highlighted on rows changed
-  since the previous version.
 
-## 4. Warnings cheat-sheet (yellow banner on every output)
+- The *Budget* sheet is the cost model: one row per spec with `Spec |
+  Line Items | Total Qty | WAG | ROM | Quote | Best | Note | <your
+  passthrough columns> | Spec Document`. The WAG/ROM/Quote cells are
+  shaded and prefilled from `costs.csv`; Best and the TOTAL row are live
+  formulas, so what-if numbers typed in Excel roll up immediately.
+  **Edits persist only when you copy them back into `costs.csv`** — every
+  build regenerates the workbook.
+- The *Parts* sheet lists what each spec covers (spec, part number, name,
+  configuration, COTS flag, rolled-up quantity, use count). Rows changed
+  since the previous version are highlighted green.
 
-| ID | Meaning | Fix |
+## Read the warnings
+
+Warnings appear in the yellow banner at the top of every output and in
+the build log.
+
+| ID | Meaning | What to do |
 |---|---|---|
-| V10 | parts covered by no spec / specs column missing | add specs.csv rows (or the column) |
-| V11 | a file lists several specs | fine; first one is the budget category |
-| V12 | spec'd item inside another spec'd subtree | check for double-counted cost |
-| V13 | specs.csv row matches no BOM file (or file missing) | delete the stale row / fix the path |
-| V14 | specs.csv overrides the export's specs column | expected; the table is authoritative |
-| V15 | duplicate or unparseable costs.csv row | fix the row |
-| V16 | spec uncosted, stale cost row, or costs file missing | add/prune costs.csv rows |
+| V10 | Parts covered by no spec, or the specs column is missing | Add specs.csv rows (or map the column) |
+| V11 | A file lists several specs | Nothing — the first listed is the budget category |
+| V12 | A spec'd item sits inside another spec'd subtree | Check for double-counted cost |
+| V13 | A specs.csv row matches no BOM file, or the file is missing | Delete the stale row or fix the path |
+| V14 | specs.csv overrides the export's specs column | Nothing — the table is authoritative |
+| V15 | A costs.csv row is a duplicate or holds an unparseable value | Fix the row |
+| V16 | A spec is uncosted, a cost row is stale, or the costs file is missing | Add or prune costs.csv rows |
 
-The build log also prints `info:` lines stating the effective
-`spec_url_template`, how many groups got linked, and the costed totals —
-read those first when something doesn't show up.
+The build log also prints `info:` lines with the effective
+`spec_url_template`, how many groups got linked, and the costed totals.
+When something doesn't show up on the dashboard, read those lines first.
 
-## 5. Where the files live
+## Choose where the files live
 
 Two supported layouts:
 
-- **Everything in the vault repo** — commit `specs.csv`/`costs.csv` next
-  to the export, point `[budget]` at them. Simplest; costs are visible to
-  everyone with vault access.
-- **Separate budget repo** (the primary-cost-model pattern): tables +
-  `bomgen.toml` + CI live in their own GitLab repo, whose CI clones the
-  vault repo for the BOM. Start from `template-budget-repo/` — its README
-  walks through `VAULT_REPO_URL`, private-repo tokens, and the weekly
-  schedule. Set `BUDGET_REPO_PROJECT` in the vault repo so every BOM push
+- **Everything in the vault repository.** Commit `specs.csv` and
+  `costs.csv` next to the export and point `[budget]` at them. This is
+  the simplest layout; costs are visible to everyone with vault access.
+- **A separate budget repository** (the primary-cost-model pattern). The
+  tables, `bomgen.toml`, and CI live in their own GitLab repository,
+  whose CI clones the vault repository for the BOM. Start from
+  `template-budget-repo/` — its README walks through `VAULT_REPO_URL`,
+  private-repository tokens, and the weekly schedule. Set
+  `BUDGET_REPO_PROJECT` in the vault repository so every BOM push
   triggers a budget rebuild (the vault CI's `trigger_budget_rebuild`
-  job); otherwise the budget site follows the BOM only weekly. Rollout
-  checklist: `BUDGET_PLAN.md`.
+  job); without it, the budget site follows the BOM only weekly. The
+  rollout checklist is in `BUDGET_PLAN.md`.

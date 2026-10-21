@@ -3,22 +3,27 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![License scan](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml/badge.svg)](https://github.com/douglase/pdmbomgen/actions/workflows/scancode.yml)
 
-Convert SolidWorks **PDM Professional** BOM exports (CSV or XML) into
-human-readable, shareable reports:
+bomgen turns the bill of materials (BOM) that SOLIDWORKS PDM Professional
+exports into reports your whole team can read, share, and publish:
 
-- **Excel** (.xlsx) — NASA-style indented BOM: title block, X level-marker
-  band, numeric Level, Qty (Assembly) / Qty (Total) roll-up, native Excel
-  row grouping for collapsible subassemblies.
-- **HTML** — a single self-contained file (no server, no internet): 
-  collapsible tree, live filtering, expand-to-level buttons, copy-as-TSV,
-  and a **Download Excel** button linking the sibling .xlsx.
+- **An Excel workbook** (.xlsx) in the familiar NASA-style indented
+  layout: title block, level-marker band, rolled-up quantities, and
+  collapsible subassemblies.
+- **A web page** — a single self-contained HTML file that works with no
+  server and no internet: collapsible tree, live filtering, copy to
+  spreadsheet, and a **Download Excel** button.
+- **A budget dashboard and costing workbook** that group parts into
+  procurement categories with dollars attached. See
+  [`BUDGET_GUIDE.md`](BUDGET_GUIDE.md).
 
-Configurable for any PDM vault via `bomgen.toml`.
+You can run bomgen by hand, or let the included CI configurations publish
+the reports to GitHub Pages or GitLab Pages on every change. Everything is
+configured for your vault in one file, `bomgen.toml`.
 
 ## Quick start
 
-Installed straight from GitHub (no PyPI package yet — this is how
-downstream "vault" repos consume it too, see below):
+Install from GitHub (there's no PyPI package yet) and convert the included
+example export:
 
 ```bash
 pip install "pdmbomgen @ git+https://github.com/douglase/pdmbomgen.git@main"
@@ -26,178 +31,169 @@ bomgen examples/NCC-1701_pdmout.csv --both
 # -> NCC-1701_pdmout_BOM.xlsx, NCC-1701_pdmout_BOM.html
 ```
 
-Working from a clone instead, without installing:
+To run from a clone without installing:
 
 ```bash
 pip install openpyxl
 python -m bomgen examples/NCC-1701_pdmout.csv --both
 ```
 
-Requires Python ≥ 3.11 (stdlib `tomllib`). openpyxl is the only runtime
+bomgen requires Python 3.11 or later. openpyxl is the only runtime
 dependency.
 
-## Usage
+## Get a BOM out of PDM
+
+- **CSV (recommended to start)** — in PDM, open the assembly's BOM tab
+  and export. Don't open and re-save the file in Excel before committing
+  it: Excel rewrites two-segment item numbers such as `2.10` as `2.1`.
+  bomgen detects and repairs the unambiguous cases and warns (rule R1),
+  but a clean export avoids the problem entirely.
+- **XML (automation path)** — a PDM export rule can emit XML on a workflow
+  transition, such as a release, for bomgen to consume. The XML parser
+  follows the documented SOLIDWORKS schema but hasn't been verified
+  against a real vault export yet (open item O2 in the design doc) — run
+  one sanitized export through it before trusting the results.
+
+Whatever the input, data-quality problems that bomgen catches (Excel
+number mangling, unresolved `SW-Mass@…` property expressions, missing
+columns, and so on) print to the terminal **and** appear in a yellow
+warning banner at the top of every report, so readers of the published
+BOM see them too.
+
+## Configure it for your vault
+
+All configuration lives in `bomgen.toml`: the title block, which export
+columns map to which report columns, part-number rules, and the optional
+features below. The file ships fully commented; the field reference is in
+`BOMGEN_DESIGN.md` §6.
+
+### Link filenames to your PDM web viewer
+
+Set `[links].file_url_template` to make every filename in the reports a
+clickable link into your PDM web viewer. The template takes `{found_in}`
+(the row's *Found In* vault folder, converted to a URL path — the leading
+`<drive>:\<Vault>\` is stripped for any drive letter) and `{file}` (the
+SOLIDWORKS filename). For example:
+
+```toml
+[links]
+file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/{found_in}"
+```
+
+turns a *Found In* of `D:\Vault\STP\ESC\Flight` into
+`…/solidworkspdm/Vault/STP/ESC/Flight`. Leave the template empty (the
+default) to keep filenames as plain text.
+
+### Build a budget by specification
+
+Group parts into procurement categories ("specs"), attach
+WAG/ROM/Quote estimates and export-control facts to each category, and
+publish the rollup as a dashboard plus a costing workbook:
+
+```bash
+bomgen INPUT.csv --budget --dashboard
+```
+
+Spec assignments and dollars live in two version-controlled CSV tables
+(`specs.csv` and `costs.csv`), so the PDM export never has to change.
+**Start with [`BUDGET_GUIDE.md`](BUDGET_GUIDE.md)** for worked examples;
+[`BUDGET_PLAN.md`](BUDGET_PLAN.md) tracks the rollout plan, and
+[`template-budget-repo/`](template-budget-repo/) is the starting point
+for keeping the cost model in its own repository.
+
+### Highlight changes and keep historical versions
+
+`--diff-against PREV.csv` highlights rows changed or added since a
+previous export in **green**, in every output; removed parts are
+summarized in the banner. Only report columns are compared, so PDM churn
+such as *Checked Out By* never flags a row (`[diff].ignore_columns`
+excludes more). In CI, `BUILD_HISTORY=1` rebuilds every git tag into
+`v/<tag>/` with yellow historical styling, a version dropdown on every
+page, and per-tag change highlighting.
+
+### Add material properties
+
+Enrich rows with density, CTE, outgassing, and other properties from a
+[materials database](MATERIALS_DB_PLAN.md) export. Commit the database's
+raw `/export/raw-json` dump next to your BOM and configure `[materials]`
+in `bomgen.toml`. Matching is by material name or synonym; bomgen reads
+the file from disk only and never touches the network. Unmatched
+materials warn — they never fail the build.
+
+## Publish to GitHub Pages or GitLab Pages
+
+The repository ships CI configurations for both services. Each compiles
+the BOM on every push to the default branch and deploys the web page and
+the Excel files together, so the download buttons work on the published
+site:
+
+- GitHub: `.github/workflows/pages.yml` (set **Settings → Pages →
+  Source** to **GitHub Actions**)
+- GitLab: `.gitlab-ci.yml` (picked up automatically)
+
+Both call `scripts/build_pages.sh` and publish the example BOM by
+default; point `BOM_INPUT` and `BOM_CONFIG` in the CI file at your own
+export. **Step-by-step instructions: [`PAGES_SETUP.md`](PAGES_SETUP.md).**
+
+## Set up a repository for your own vault data
+
+This repository is the tool — your PDM export doesn't belong in it. To
+version-control your own vault's export, publish it to Pages, and pick up
+bomgen fixes automatically on every build, copy
+[`template-repo/`](template-repo/) into a new repository and follow
+[`template-repo/SETUP.md`](template-repo/SETUP.md).
+
+The template installs pdmbomgen with a plain `git clone` of this
+repository, which works anonymously only while this repository is
+**public**. If it's private, either make it public (recommended — it's
+only the tool; no vault data lives here) or give the downstream CI a
+token. `template-repo/SETUP.md` §4.5 covers both.
+
+## Command-line reference
 
 ```
 bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
                        [--budget [OUT]] [--dashboard [OUT]]
+                       [--specs-csv PATH] [--costs-csv PATH]
                        [--xlsx-url URL] [--materials-cache PATH]
                        [--diff-against PREV] [--historical LABEL]
                        [--source-rev REV] [--repo NAME] [--branch NAME]
                        [--commit SHA] [--source-url URL] [--source-path PATH]
-                       [-o OUTDIR] [--quiet]
-```
-(`python -m bomgen ...` works identically from a clone. The provenance
-flags — `--source-rev/--repo/--branch/--commit/--source-url/--source-path`
-— are normally supplied by `scripts/build_pages.sh`, not typed by hand.)
-
-- **CSV** — the interactive path: PDM BOM tab → export. Tip: do **not**
-  round-trip the file through Excel; Excel float-mangles two-segment item
-  numbers ("2.10" → "2.1"). bomgen detects and repairs the unambiguous
-  cases with a warning (rule R1).
-- **Data-quality banner** — caught gotchas (Excel float-mangle repairs,
-  unresolved `SW-Mass@…` property expressions, missing COTS column, …)
-  print to stderr *and* render in a yellow warning box at the top of both
-  reports, so readers of the published BOM see them too.
-- **XML** — the automation path: a PDM export rule fires on a workflow
-  transition (e.g., release) and drops an XML for bomgen to consume.
-  ⚠ The XML parser is written against SOLIDWORKS' documented schema family
-  but has **not yet been verified against a real vault export** (open item
-  O2 in the design doc) — send one sanitized export through
-  `tests/fixtures/` before trusting it. XML files are parsed with stdlib
-  ElementTree; treat inputs as trusted (they come from your own vault).
-
-Configuration (project title block, column-name mapping, part-number
-regex, passthrough columns) lives in `bomgen.toml` — see the comments
-there and design doc §6.
-
-- **PDM viewer links** — set `[links].file_url_template` in `bomgen.toml`
-  to make each filename a clickable link to your PDM web viewer. Use
-  `{found_in}` (the row's Found In vault folder mapped to a URL — the
-  leading `<drive>:\<Vault>\` is stripped automatically for any drive
-  letter) and/or `{file}` (the SolidWorks filename), e.g.
-  `file_url_template = "https://your-pdm.example.edu/solidworkspdm/Vault/{found_in}"`
-  turns a Found In of `D:\Vault\STP\ESC\Flight` into
-  `…/solidworkspdm/Vault/STP/ESC/Flight`. Empty (default) leaves filenames
-  as plain text. HTML links the filename in the Part Name; Excel makes the
-  Part Name cell a hyperlink.
-- **Spec/RFQ budget** — flag parts into procurement categories either with
-  a committed **specs table** (`[budget].specs_file`, `File,Spec[,Note]`
-  rows keyed by filename — the PDM export needs no change, and the table
-  wins over any export column) or with a spec-reference column in the
-  export (mapped by `[columns] specs = "Specs"`; several refs per cell
-  separated by `[budget].spec_separator`, first wins). Spec-level dollars
-  live in a committed **costs table** (`[budget].costs_file`,
-  `Spec,WAG,ROM,Quote[,Note]`; Best = Quote, else ROM, else WAG). Then
-  `bomgen INPUT.csv --budget --dashboard` writes:
-  - a **budget workbook**: the spec-level cost model — WAG/ROM/Quote input
-    cells prefilled from the costs table, a live Best chain, and a Parts
-    sheet listing what each spec covers, and
-  - a **dashboard page**: the BOM grouped by spec with stat tiles
-    (including Budget (Best) and Specs costed), per-spec Best dollars,
-    filtering, and a download button for the workbook.
-  A spec'd row covers its whole subtree (a quoted weldment includes its
-  piece parts); parts under no spec are reported as *(unassigned)* so
-  budget gaps stay visible (warnings V10–V16). Columns beyond
-  `Spec,WAG,ROM,Quote,Note` in the costs table (e.g. the export-control
-  review set: Hardware / Technology / Software / publication intent /
-  Rationale / Vendor) pass through to the Budget sheet verbatim.
-  **Worked examples and the full how-to: `BUDGET_GUIDE.md`.** In CI, set
-  `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
-  To keep the cost model in its **own repo** (CI clones the vault repo for
-  the BOM), start from `template-budget-repo/`; rollout steps and open
-  follow-ups are tracked in `BUDGET_PLAN.md`.
-- **Build provenance** — every output records what it was built from: a
-  collapsible *Build provenance* block in the page headers and a linked
-  cell in both workbooks, listing the source BOM path (hyperlinked to the
-  file at the build commit), source data rev, repository/branch/commit,
-  config file, and toolchain versions (bomgen, Python, openpyxl). The git
-  facts come from `build_pages.sh` (CI env vars or the git remote) via
-  `--repo/--branch/--commit/--source-url`; bomgen fills in the rest.
-- **Change highlighting & historical versions** — `--diff-against PREV.csv`
-  highlights rows changed/added since a previous version **green** in every
-  output (removed parts are summarized in the banner); only report columns
-  are compared, so PDM churn like *Checked Out By* never lights a row
-  (`[diff].ignore_columns` to exclude more). In CI, `BUILD_HISTORY=1`
-  rebuilds **every git tag** with the current generator into `v/<tag>/` —
-  yellow historical chrome with a "view current" link, a version dropdown
-  on every page, and per-tag diffs against the previous tag; the current
-  page diffs against the previous commit. `--historical LABEL` marks any
-  build as historical manually.
-- **Material properties** — enrich rows with density, CTE, outgassing, etc.
-  from a [materials database](MATERIALS_DB_PLAN.md) export. Commit that
-  database's raw `/export/raw-json` dump (a JSON array of material
-  documents) next to your BOM and set `[materials]` in `bomgen.toml`
-  (`enabled`, `cache_file`, and the `properties` to show). bomgen matches
-  each row's `Material` against the DB (by name/synonym) and adds the
-  chosen properties as columns in both outputs. Local file only — no
-  network. Off by default; unmatched materials get a warning, never an
-  error.
-
-When `--both` (or `--xlsx` and `--html` together) writes both files into
-the same directory, the HTML's **Download Excel** button links the .xlsx by
-relative filename automatically; `--xlsx-url` overrides the link target,
-and the button removes itself when no .xlsx location is known.
-
-## Publishing to GitHub / GitLab Pages
-
-The repo ships CI configs for both services that compile the BOM on every
-push to the default branch and deploy `index.html` + the `.xlsx` together,
-so the download button works on the published page:
-
-- GitHub: `.github/workflows/pages.yml` (Settings → Pages → Source =
-  GitHub Actions)
-- GitLab: `.gitlab-ci.yml` (picked up automatically)
-
-Both call `scripts/build_pages.sh` and publish the example BOM by default —
-point `BOM_INPUT`/`BOM_CONFIG` in the CI file at your own export.
-**Step-by-step setup for both services: [`PAGES_SETUP.md`](PAGES_SETUP.md).**
-
-## Vault repos (real BOM data, tracking upstream fixes)
-
-This repo is the tool; your PDM export doesn't belong in it. For a repo
-that version-controls **your** vault's CSV/XML export, installs pdmbomgen
-fresh on every build (so fixes merged here reach it automatically), and
-stamps the compiled report with the git hash of the export's last commit,
-copy **[`template-repo/`](template-repo/)** into a new repo — see
-[`template-repo/SETUP.md`](template-repo/SETUP.md).
-
-⚠ That install is a plain `git clone` of **this** repo, so it only works
-anonymously if this repo is **public**. If it's private, either flip it to
-public (recommended — it's just the tool, no vault data lives here) or
-give downstream CI a token; see `template-repo/SETUP.md` §4.5 either way.
-
-## Design & decisions
-
-`BOMGEN_DESIGN.md` is the living design document: input format findings
-(from real exports), derivation rules, the decision log (D1–D4), and open
-items (O1 dash-number source, O2 XML schema verification). Update it in
-place when rules change.
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
+                       [-o OUTDIR] [--quiet] [--version]
 ```
 
-Covers: tree reconstruction, Excel float-mangle repair, quantity roll-up,
-Rev→dash part numbers, XML nested-references ingest, and output smoke
-tests, plus a golden snapshot (`tests/fixtures/golden_tree.json`) —
-regenerate it deliberately (delete and re-run) when derivation rules
-change.
+`python -m bomgen …` works identically from a clone. The provenance flags
+(`--source-rev`, `--repo`, `--branch`, `--commit`, `--source-url`,
+`--source-path`) are normally supplied by `scripts/build_pages.sh`, not
+typed by hand — every output records a collapsible *Build provenance*
+block (and a linked workbook cell) listing the source BOM, its commit,
+the repository and branch, the configuration file, and the exact tool
+versions that compiled it.
+
+When `--both` writes both files into one directory, the web page's
+**Download Excel** button links the workbook by relative filename
+automatically. `--xlsx-url` overrides the link target, and the button
+removes itself when no workbook location is known.
+
+## For developers
+
+- **Design document** — `BOMGEN_DESIGN.md` is the living design record:
+  input-format findings from real exports, derivation rules, the data-flow
+  diagrams, the decision log (D1–D14), and open items. Update it in place
+  when rules change.
+- **Tests** — `python -m pytest tests/ -v` covers tree reconstruction,
+  the Excel number-mangle repair, quantity roll-up, part numbering, XML
+  ingest, the budget and provenance features, and a golden snapshot
+  (`tests/fixtures/golden_tree.json`). Regenerate the snapshot
+  deliberately — delete it and rerun — when derivation rules change.
+- **Repository notes** — `examples/NCC-1701_pdmout.csv` is a sanitized,
+  Star Trek-themed copy of a real PDM export; its structure, sparsity,
+  and defects (including the Excel-mangled `2.10` item) are preserved
+  verbatim. `bomgen/` is the installable package; the HTML templates ship
+  as package data. This project was largely written with Claude Code.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Third-party dependency licenses, example-data
-provenance, and the automated license-scan safeguard are documented in
-[LICENSE-NOTES.md](LICENSE-NOTES.md).
-
-## Repository notes
-
-- `examples/NCC-1701_pdmout.csv` is a sanitized (Star Trek-themed) copy of a
-  real PDM export — structure, sparsity, and defects (including the Excel
-  float-mangled `2.10` item) are preserved verbatim from the original.
-- `bomgen/` is the installable package (`pyproject.toml` at repo root);
-  `bomgen/template.html` ships as package data and is read at runtime next
-  to the installed module, so no manual co-location is needed.
-- This project was largely written with Claude Code.
+MIT — see [LICENSE](LICENSE). Third-party dependency licenses,
+example-data provenance, and the automated license-scan safeguard are
+documented in [LICENSE-NOTES.md](LICENSE-NOTES.md).

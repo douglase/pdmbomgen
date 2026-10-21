@@ -11,7 +11,7 @@ Three repos, three responsibilities:
 
 ```
 pdmbomgen   (tool, pip-installed @main by CI)   — HOW to build
-vault repo  (PDM export, e.g. vault/x.csv)      — WHAT the hardware is
+vault repo  (PDM export, for example vault/x.csv) — WHAT the hardware is
 budget repo (specs.csv + costs.csv + CI)        — WHAT it costs
 ```
 
@@ -62,7 +62,7 @@ budget repo (specs.csv + costs.csv + CI)        — WHAT it costs
   editing CSVs by hand proves tedious.
 - **History for the budget repo** — `BUILD_HISTORY` is off there because a
   tag of the budget repo pins the cost model but not the vault clone;
-  pinning the vault revision per tag (e.g. a committed `vault.lock` with
+  pinning the vault revision per tag (for example, a committed `vault.lock` with
   the SHA to clone) would make tagged budget snapshots fully reproducible.
 - **Smartsheet handoff** — if copying Best totals by hand gets old, a tiny
   exporter (per-spec `Spec,Best` CSV already derivable from the rollup)
