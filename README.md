@@ -101,7 +101,8 @@ there and design doc §6.
   budget gaps stay visible (warnings V10–V16). In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
   To keep the cost model in its **own repo** (CI clones the vault repo for
-  the BOM), start from `template-budget-repo/`.
+  the BOM), start from `template-budget-repo/`; rollout steps and open
+  follow-ups are tracked in `BUDGET_PLAN.md`.
 - **Build provenance** — every output records what it was built from: a
   collapsible *Build provenance* block in the page headers and a linked
   cell in both workbooks, listing the source BOM path (hyperlinked to the
