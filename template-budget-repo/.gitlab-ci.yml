@@ -60,3 +60,8 @@ pages:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # the vault repo pings us on BOM pushes (its trigger_budget_rebuild job,
+    # or a pipeline trigger token on older GitLab) so the dashboard tracks
+    # BOM changes immediately, not just weekly:
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+    - if: $CI_PIPELINE_SOURCE == "trigger"

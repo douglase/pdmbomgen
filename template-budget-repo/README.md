@@ -58,7 +58,14 @@ vault/tool changes) and the site rebuilds.
    and `costs.csv`.
 4. Add a weekly pipeline schedule (**Build → Pipeline schedules**) so the
    site tracks vault commits and upstream pdmbomgen fixes.
-5. If pdmbomgen (the tool) is private, add a `PDMBOMGEN_TOKEN` CI variable —
+5. **Rebuild on vault pushes (recommended):** in the *vault* repo, set a
+   CI/CD variable `BUDGET_REPO_PROJECT` to this project's full path — its
+   `trigger_budget_rebuild` job then fires this repo's pipeline on every
+   BOM push, so the dashboard follows the BOM immediately instead of
+   waiting for the weekly schedule. (Needs GitLab 15.3+ and the pusher to
+   have Developer access here; the vault CI file comments describe the
+   pipeline-trigger-token fallback for older instances.)
+6. If pdmbomgen (the tool) is private, add a `PDMBOMGEN_TOKEN` CI variable —
    same mechanism as the vault template, see its SETUP.md §4.5.
 
 Provenance on every page/workbook shows the vault repo's commit for the BOM

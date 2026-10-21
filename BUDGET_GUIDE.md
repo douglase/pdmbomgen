@@ -140,4 +140,7 @@ Two supported layouts:
   `bomgen.toml` + CI live in their own GitLab repo, whose CI clones the
   vault repo for the BOM. Start from `template-budget-repo/` — its README
   walks through `VAULT_REPO_URL`, private-repo tokens, and the weekly
-  schedule. Rollout checklist: `BUDGET_PLAN.md`.
+  schedule. Set `BUDGET_REPO_PROJECT` in the vault repo so every BOM push
+  triggers a budget rebuild (the vault CI's `trigger_budget_rebuild`
+  job); otherwise the budget site follows the BOM only weekly. Rollout
+  checklist: `BUDGET_PLAN.md`.

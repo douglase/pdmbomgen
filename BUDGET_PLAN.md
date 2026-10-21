@@ -48,7 +48,11 @@ budget repo (specs.csv + costs.csv + CI)        — WHAT it costs
    and the "Specs costed" tile track coverage.
 5. Add a weekly pipeline schedule (**Build → Pipeline schedules**) so the
    site follows vault commits and upstream pdmbomgen fixes.
-6. Retire per-part costing habits: numbers typed into a downloaded
+6. In the **vault repo**, set CI/CD variable `BUDGET_REPO_PROJECT` to the
+   budget project's path so every BOM push triggers a budget rebuild
+   immediately (vault CI's `trigger_budget_rebuild` job; the weekly
+   schedule then only backstops tool updates).
+7. Retire per-part costing habits: numbers typed into a downloaded
    workbook persist only when copied back into `costs.csv`.
 
 ## Follow-ups (not yet built)
