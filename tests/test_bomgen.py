@@ -691,8 +691,10 @@ def _tables_build(tmp_path, bom=SPECLESS_CSV, specs=SPECS_TABLE,
     if sp:
         bomgen.apply_spec_table(root, bomgen.read_spec_table(sp, warnings),
                                 warnings)
-    costs_d = bomgen.read_cost_table(cp, warnings) if cp else None
+    costs_d, cost_cols = (bomgen.read_cost_table(cp, warnings)
+                          if cp else (None, []))
     rollup = bomgen.budget_rollup(root, cfg, warnings, header, costs=costs_d,
+                                  cost_cols=cost_cols,
                                   external_specs=sp is not None)
     return rollup, warnings
 
@@ -731,7 +733,7 @@ def test_cost_table_parse_and_best_chain(tmp_path):
     warnings = []
     cp = tmp_path / "costs.csv"
     cp.write_text(COSTS_TABLE, encoding="utf-8")
-    costs = bomgen.read_cost_table(cp, warnings)
+    costs, _ = bomgen.read_cost_table(cp, warnings)
     weld = costs[bomgen._spec_key("SPEC-WELD-001")]
     assert weld["wag"] == 25000.0          # "$25,000" parsed
     assert weld["rom"] == 18500.0 and weld["quote"] is None
@@ -747,11 +749,47 @@ def test_cost_table_duplicate_and_bad_values(tmp_path):
                   "SPEC-A,100,,\n"
                   "SPEC-A,200,,\n"
                   "SPEC-B,TBD,,\n", encoding="utf-8")
-    costs = bomgen.read_cost_table(cp, warnings)
+    costs, _ = bomgen.read_cost_table(cp, warnings)
     assert costs[bomgen._spec_key("SPEC-A")]["wag"] == 100.0  # first wins
     assert costs[bomgen._spec_key("SPEC-B")]["wag"] is None
     assert any(w.startswith("V15") and "SPEC-A" in w for w in warnings)
     assert any(w.startswith("V15") and "TBD" in w for w in warnings)
+
+
+def test_cost_table_passthrough_columns_reach_workbook(tmp_path):
+    """Unknown costs-file columns (the export-control set: Hardware /
+    Technology / Software / publication intent / Rationale / Vendor) pass
+    through to the Budget sheet verbatim, in file order, between Note and
+    Spec Document — add a column to the CSV, get a column in the workbook."""
+    costs = ("Spec,WAG,Hardware,Technology,Software,"
+             "Intent to Publish Research Product Design,"
+             "Existing Publication,Rationale,Vendor\n"
+             "SPEC-WELD-001,25000,EAR99,EAR99,,Yes,doi:10/xyz,"
+             "no controlled tech,Acme Fab\n"
+             "SPEC-MACH-002,9000,ITAR,,,,,milspec fitting,Beta Machine\n")
+    rollup, warnings = _tables_build(tmp_path, costs=costs)
+    assert rollup["costCols"] == [
+        "Hardware", "Technology", "Software",
+        "Intent to Publish Research Product Design",
+        "Existing Publication", "Rationale", "Vendor"]
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "bom.csv", out, warnings)
+    import openpyxl
+    bs = openpyxl.load_workbook(out)["Budget"]
+    headers = [c.value for c in bs[6]]
+    assert headers == ["Spec", "Line Items", "Total Qty", "WAG", "ROM",
+                       "Quote", "Best", "Note", "Hardware", "Technology",
+                       "Software", "Intent to Publish Research Product Design",
+                       "Existing Publication", "Rationale", "Vendor",
+                       "Spec Document"]
+    rows = {bs.cell(row=r, column=1).value: r for r in range(7, 11)}
+    weld = rows["SPEC-WELD-001"]
+    assert bs.cell(row=weld, column=9).value == "EAR99"      # Hardware
+    assert bs.cell(row=weld, column=13).value == "doi:10/xyz"  # Existing Pub
+    assert bs.cell(row=weld, column=15).value == "Acme Fab"  # Vendor
+    mach = rows["SPEC-MACH-002"]
+    assert bs.cell(row=mach, column=9).value == "ITAR"
 
 
 def test_rollup_costs_totals_and_warnings(tmp_path):

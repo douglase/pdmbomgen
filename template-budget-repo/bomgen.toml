@@ -21,9 +21,14 @@ contact_info = ""
 # specs.csv  "File,Spec[,Note]"        — which spec/RFQ category each
 #            SolidWorks file belongs to; a spec'd assembly covers its whole
 #            subtree. Rows for files no longer in the BOM warn (V13).
-# costs.csv  "Spec,WAG,ROM,Quote[,Note]" — spec-level dollars; fill any
+# costs.csv  "Spec,WAG,ROM,Quote[,Note,...]" — spec-level dollars; fill any
 #            subset, Best = Quote, else ROM, else WAG. Uncosted specs and
 #            stale rows warn (V16). "$1,234.50" and plain numbers both parse.
+#            EVERY OTHER column passes through to the Budget sheet verbatim,
+#            in file order — the template ships the export-control review
+#            set (Hardware / Technology / Software / Intent to Publish
+#            Research Product Design / Existing Publication / Rationale /
+#            Vendor); add or remove columns freely, no config change needed.
 # Paths are relative to this file.
 specs_file = "specs.csv"
 costs_file = "costs.csv"

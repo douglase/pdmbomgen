@@ -412,11 +412,17 @@ clones the vault repo for the export:
   **wins over the export's specs column** on conflict (V14); rows matching
   no BOM file warn (V13). With a table configured, a missing specs column
   is not a V10 condition.
-- `[budget].costs_file` — `Spec,WAG,ROM,Quote[,Note]`, spec-level only
+- `[budget].costs_file` — `Spec,WAG,ROM,Quote[,Note,...]`, spec-level only
   (owner decision). `$1,234.50`-style values parse; any subset of the
   three estimates may be filled; duplicate/unparseable rows warn (V15).
   Uncosted specs and cost rows naming no live spec warn (V16), and the
   rollup carries `cost` per group plus `totalBest`/`costedSpecs` counts.
+  **Every other column passes through verbatim** to the Budget sheet (in
+  file order, between Note and Spec Document) and into the dashboard
+  tooltip — the templates ship the export-control review set (Hardware /
+  Technology / Software / Intent to Publish Research Product Design /
+  Existing Publication / Rationale / Vendor), but any column works with
+  no config or code change. Usage guide with examples: `BUDGET_GUIDE.md`.
 - Config-given paths resolve **relative to the config file**, so
   historical tag rebuilds (§5.5) read each tag's own tables. CLI overrides:
   `--specs-csv` / `--costs-csv`. Missing files warn (V13/V16), never abort.

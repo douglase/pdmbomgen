@@ -1,5 +1,5 @@
-Spec,WAG,ROM,Quote,Note
-RFQ-WELD-001,25000,18500,,ROM from vendor budgetary letter 2026-06
-RFQ-MACH-001,12000,,,WAG pending drawing release
-RFQ-HDWE-001,,,1840.50,McMaster cart quote
-ASTM B753,3000,,,plate stock allowance
+Spec,WAG,ROM,Quote,Note,Hardware,Technology,Software,Intent to Publish Research Product Design,Existing Publication,Rationale,Vendor
+RFQ-WELD-001,25000,18500,,ROM from vendor budgetary letter 2026-06,EAR99,EAR99,,Yes,,structural weldment; no controlled technology,Starfleet Fabrication
+RFQ-MACH-001,12000,,,WAG pending drawing release,EAR99,,,Yes,,generic machined parts from public drawings,TBD
+RFQ-HDWE-001,,,1840.50,McMaster cart quote,EAR99,,,,"doi:10.5555/ncc1701",catalog COTS fasteners,McMaster-Carr
+ASTM B753,3000,,,plate stock allowance,EAR99,,,Yes,,raw material to a public ASTM spec,TBD

@@ -670,10 +670,13 @@ def _spec_key(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).casefold()
 
 
-def _read_table(path: Path, required: tuple[str, ...]) -> list[dict]:
+def _read_table(path: Path,
+                required: tuple[str, ...]) -> tuple[list[str], list[dict]]:
     """Small-CSV reader for the committed specs/costs tables: headers are
-    matched case/whitespace-insensitively and returned under their canonical
-    (required/optional) names."""
+    matched case/whitespace-insensitively and rows are returned keyed by
+    canonical (lowercased) header names. Also returns the header list as
+    written in the file, so callers can pass unknown columns through with
+    their original spelling."""
     header, rows = read_csv(path)
     hmap = {_spec_key(h): h for h in header}
     missing = [c for c in required if _spec_key(c) not in hmap]
@@ -684,7 +687,7 @@ def _read_table(path: Path, required: tuple[str, ...]) -> list[dict]:
     for row in rows:
         out.append({_spec_key(k): (v or "").strip() for k, v in row.items()
                     if k is not None})
-    return out
+    return header, out
 
 
 def read_spec_table(path: Path, warnings: list[str]) -> dict[str, dict]:
@@ -693,7 +696,8 @@ def read_spec_table(path: Path, warnings: list[str]) -> dict[str, dict]:
     file accumulate as multi-spec (first listed is the budget category, V11
     fires in the rollup as usual). Returns {match key: {"file", "specs"}}."""
     table: dict[str, dict] = {}
-    for row in _read_table(path, ("file", "spec")):
+    _, rows = _read_table(path, ("file", "spec"))
+    for row in rows:
         fname, spec = row.get("file", ""), row.get("spec", "")
         if not fname or not spec:
             continue
@@ -748,14 +752,23 @@ def _parse_money(s: str) -> float | None:
         return None
 
 
-def read_cost_table(path: Path, warnings: list[str]) -> dict[str, dict]:
-    """costs.csv — "Spec,WAG,ROM,Quote[,Note]": the committed spec-level cost
-    model (D14). Any subset of the three estimates may be filled; Best =
-    Quote, else ROM, else WAG. Returns {match key: cost record}."""
+def read_cost_table(path: Path,
+                    warnings: list[str]) -> tuple[dict[str, dict], list[str]]:
+    """costs.csv — "Spec,WAG,ROM,Quote[,Note,...]": the committed spec-level
+    cost model (D14). Any subset of the three estimates may be filled; Best =
+    Quote, else ROM, else WAG. Every OTHER column in the file (e.g. the
+    export-control set: Hardware, Technology, Software, Intent to Publish,
+    Existing Publication, Rationale, Vendor) passes through verbatim to the
+    budget workbook, in file order — add a column to the CSV and it appears
+    in the Budget sheet, no code change. Returns ({match key: cost record},
+    [passthrough column headers as written])."""
     costs: dict[str, dict] = {}
     dupes: dict[str, int] = {}
     bad: dict[str, int] = {}
-    for row in _read_table(path, ("spec",)):
+    header, rows = _read_table(path, ("spec",))
+    known = {"spec", "wag", "rom", "quote", "note"}
+    extra_cols = [h for h in header if _spec_key(h) not in known]
+    for row in rows:
         spec = row.get("spec", "")
         if not spec:
             continue
@@ -773,6 +786,7 @@ def read_cost_table(path: Path, warnings: list[str]) -> dict[str, dict]:
         rec["best"] = (rec["quote"] if rec["quote"] is not None
                        else rec["rom"] if rec["rom"] is not None
                        else rec["wag"])
+        rec["extra"] = {h: row.get(_spec_key(h), "") for h in extra_cols}
         costs[k] = rec
     if dupes:
         warnings.append(
@@ -782,13 +796,14 @@ def read_cost_table(path: Path, warnings: list[str]) -> dict[str, dict]:
         warnings.append(
             f"V15: unparseable cost value(s) ignored: "
             f"{', '.join(sorted(bad)[:3])}")
-    return costs
+    return costs, extra_cols
 
 
 
 def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
                   header: list[str] | None = None,
                   costs: dict | None = None,
+                  cost_cols: list[str] | None = None,
                   external_specs: bool = False) -> dict:
     """Group the BOM into RFQ/procurement categories keyed by spec document.
 
@@ -902,6 +917,7 @@ def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
                         "totalQty": sum(l["qty"] for l in ulines),
                         "cost": None},
         "costed": costs is not None,
+        "costCols": list(cost_cols or []),
         "counts": {
             "specs": len(specs_out),
             "lines": sum(len(s["lines"]) for s in specs_out),
@@ -1000,23 +1016,30 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
                   "configured). Best = Quote, else ROM, else WAG. Edits made "
                   "here persist only if copied back into the costs file — "
                   "this workbook is regenerated on every build.").font = F(9)
+    # passthrough columns from the costs file (e.g. the export-control set)
+    # sit between Note and the Spec Document link, in file order
+    xcols = rollup.get("costCols", [])
+    b_headers = (["Spec", "Line Items", "Total Qty", "WAG", "ROM", "Quote",
+                  "Best", "Note"] + xcols + ["Spec Document"])
+    ncols = len(b_headers)
+    doc_col = ncols
     if historical:
         h = bs.cell(row=5, column=1,
                     value=f"⚠ HISTORICAL VERSION — {historical}")
         h.font = Font(name=fontname, size=11, bold=True, color="7A4E00")
         h.fill = PatternFill("solid", fgColor=HIST_YELLOW)
-        bs.merge_cells(start_row=5, start_column=1, end_row=5, end_column=9)
+        bs.merge_cells(start_row=5, start_column=1, end_row=5,
+                       end_column=ncols)
     if warnings:
         wcell = bs.cell(row=4, column=1, value="⚠ " + " · ".join(
             banner_lines(warnings)))
         wcell.font = Font(name=fontname, size=9, color="7A4E00")
         wcell.fill = PatternFill("solid", fgColor="FFF3C4")
-        bs.merge_cells(start_row=4, start_column=1, end_row=4, end_column=9)
+        bs.merge_cells(start_row=4, start_column=1, end_row=4,
+                       end_column=ncols)
         wcell.alignment = Alignment(wrap_text=True, vertical="top")
         bs.row_dimensions[4].height = max(15, 12 * len(banner_lines(warnings)))
 
-    b_headers = ["Spec", "Line Items", "Total Qty", "WAG", "ROM", "Quote",
-                 "Best", "Note", "Spec Document"]
     hrow = 6
     for j, h in enumerate(b_headers, 1):
         c = bs.cell(row=hrow, column=j, value=h)
@@ -1038,11 +1061,15 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
                       f'IF(D{r}<>"",D{r},"")))').number_format = money
         if cost and cost.get("note"):
             bs.cell(row=r, column=8, value=cost["note"])
-        for j in range(2, 9):
+        for off, h in enumerate(xcols):
+            val = cost.get("extra", {}).get(h, "") if cost else ""
+            if val:
+                bs.cell(row=r, column=9 + off, value=val)
+        for j in range(2, 9 + len(xcols)):
             bs.cell(row=r, column=j).font = F(11)
         url = g.get("url", "")
         if url:
-            c = bs.cell(row=r, column=9, value=url)
+            c = bs.cell(row=r, column=doc_col, value=url)
             c.hyperlink, c.font = url, Font(name=fontname, size=10,
                                             color="0563C1",
                                             underline="single")
@@ -1061,13 +1088,14 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
     pc = bs.cell(row=r + 2, column=1, value=_provenance_cell(cfg, provenance))
     pc.font = F(8)
     bs.merge_cells(start_row=r + 2, start_column=1, end_row=r + 2,
-                   end_column=9)
+                   end_column=ncols)
     if provenance and provenance.get("source_url"):
         pc.hyperlink = provenance["source_url"]
         pc.font = Font(name=fontname, size=8, color="0563C1",
                        underline="single")
 
-    for j, w in enumerate([26, 11, 10, 13, 13, 13, 13, 28, 40], 1):
+    widths = [26, 11, 10, 13, 13, 13, 13, 28] + [16] * len(xcols) + [40]
+    for j, w in enumerate(widths, 1):
         bs.column_dimensions[get_column_letter(j)].width = w
     bs.freeze_panes = f"A{hrow + 1}"
 
@@ -1541,6 +1569,7 @@ def main(argv=None) -> int:
     enrich_materials(root, cfg, warnings)
     bcfg = cfg.get("budget", {})
     costs = None
+    cost_cols: list[str] = []
     external_specs = False
     if a.budget or a.dashboard:
         # config-given table paths resolve relative to the config file, so a
@@ -1562,11 +1591,12 @@ def main(argv=None) -> int:
                                      if bcfg.get("costs_file") else None)
         if costs_path is not None:
             if costs_path.is_file():
-                costs = read_cost_table(costs_path, warnings)
+                costs, cost_cols = read_cost_table(costs_path, warnings)
             else:
                 warnings.append(f"V16: costs file not found: {costs_path} — "
                                 "budget outputs carry no dollars")
     rollup = (budget_rollup(root, cfg, warnings, header, costs=costs,
+                            cost_cols=cost_cols,
                             external_specs=external_specs)
               if (a.budget or a.dashboard) else None)
     if rollup is not None:

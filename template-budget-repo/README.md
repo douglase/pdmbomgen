@@ -31,10 +31,15 @@ quoted weldment includes its piece parts). The PDM export never needs a
 specs column; rows naming files that left the BOM warn (V13) instead of
 silently rotting.
 
-**`costs.csv`** — `Spec,WAG,ROM,Quote[,Note]`: spec-level dollars, any
+**`costs.csv`** — `Spec,WAG,ROM,Quote[,Note,...]`: spec-level dollars, any
 subset filled. `$12,000`-style values parse. Uncosted specs and stale rows
 warn (V16), so the dashboard's "Specs costed" tile tells you when the
-budget total is incomplete.
+budget total is incomplete. Every **other** column passes through to the
+Budget sheet verbatim — this template ships the export-control review set
+(Hardware / Technology / Software / Intent to Publish Research Product
+Design / Existing Publication / Rationale / Vendor); add or remove columns
+freely. Worked examples for both tables: `BUDGET_GUIDE.md` in the
+pdmbomgen repo.
 
 Commit a change to either table (or wait for the weekly schedule to pick up
 vault/tool changes) and the site rebuilds.

@@ -88,10 +88,16 @@ const COSTED = !!DATA.costed;
 if (!COSTED) document.getElementById("costh").remove();
 const fmt$ = v => v == null ? "" :
   "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
-const costTip = g => !g.cost ? "no entry in the costs file" :
-  ["wag", "rom", "quote"].filter(k => g.cost[k] != null)
-    .map(k => `${k.toUpperCase()} ${fmt$(g.cost[k])}`).join(" · ") +
-  (g.cost.note ? ` — ${g.cost.note}` : "");
+const costTip = g => {
+  if (!g.cost) return "no entry in the costs file";
+  const parts = ["wag", "rom", "quote"].filter(k => g.cost[k] != null)
+    .map(k => `${k.toUpperCase()} ${fmt$(g.cost[k])}`);
+  if (g.cost.note) parts.push(g.cost.note);
+  // passthrough columns from the costs file (export control, vendor, ...)
+  for (const [k, v] of Object.entries(g.cost.extra || {}))
+    if (v) parts.push(`${k}: ${v}`);
+  return parts.join(" · ");
+};
 
 // stat tiles
 const tiles = [

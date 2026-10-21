@@ -98,7 +98,11 @@ there and design doc §6.
     filtering, and a download button for the workbook.
   A spec'd row covers its whole subtree (a quoted weldment includes its
   piece parts); parts under no spec are reported as *(unassigned)* so
-  budget gaps stay visible (warnings V10–V16). In CI, set
+  budget gaps stay visible (warnings V10–V16). Columns beyond
+  `Spec,WAG,ROM,Quote,Note` in the costs table (e.g. the export-control
+  review set: Hardware / Technology / Software / publication intent /
+  Rationale / Vendor) pass through to the Budget sheet verbatim.
+  **Worked examples and the full how-to: `BUDGET_GUIDE.md`.** In CI, set
   `BUILD_DASHBOARD=1` to publish `dashboard.html` next to the BOM page.
   To keep the cost model in its **own repo** (CI clones the vault repo for
   the BOM), start from `template-budget-repo/`; rollout steps and open
