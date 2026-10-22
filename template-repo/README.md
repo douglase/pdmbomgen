@@ -1,4 +1,8 @@
 # vault-bom-template
+_Starting point for a repository that owns one PDM vault's BOM export and publishes it as a compiled report._
+
+<!-- When instantiating this template: rename the title to your new
+     repository's name, delete this comment, and follow SETUP.md. -->
 
 A minimal starting point for a repo that owns **one PDM vault's BOM
 export**: the CSV/XML lives here under version control, [pdmbomgen]

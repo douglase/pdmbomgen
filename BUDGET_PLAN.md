@@ -1,4 +1,5 @@
 # Plan: spec-level financial budget — decoupled cost model
+_The decided architecture, the rollout checklist, and the deferred follow-ups._
 
 **Status: implemented in pdmbomgen** (decision D14; §5.4 and the §1.1
 data-flow diagrams in `BOMGEN_DESIGN.md`). What remains is the rollout —

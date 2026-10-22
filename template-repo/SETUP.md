@@ -1,4 +1,5 @@
 # Set up a new vault-BOM repository from this template
+_One-time steps from template copy to a published, provenance-stamped BOM site._
 
 Follow these steps once for each PDM vault or assembly you want a
 published BOM for.

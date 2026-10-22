@@ -1,4 +1,5 @@
 # Plan: material-property enrichment from `materials_database`
+_How BOM rows gain density, CTE, and outgassing properties from a committed database export._
 
 **Status: Stage B implemented** (decision D10, `[materials]` config +
 `enrich_materials()` in `bomgen/__init__.py`). bomgen now reads a committed

@@ -1,10 +1,12 @@
 # Publish the BOM to GitHub Pages or GitLab Pages
+_Step-by-step setup so your team always has the current BOM — and its Download Excel button — one link away._
 
-This page shows you how to publish the BOM reports as a website, so your
-team always has the current BOM — and its **Download Excel** button — one
-link away.
+> [!Important]
+> Both pipelines publish the example BOM until you point `BOM_INPUT` and `BOM_CONFIG`
+> at your own committed export.
 
 ## How publishing works
+_All outputs build into one directory and deploy together._
 
 At build time, CI generates all the outputs into one directory and
 deploys them together:
@@ -30,6 +32,7 @@ example BOM (`examples/NCC-1701_pdmout.csv`) by default. **Edit
 The input CSV or XML must be committed to the repository.
 
 ## Set up GitHub Pages
+_From push to live URL with the included workflow._
 
 The workflow is `.github/workflows/pages.yml`.
 
@@ -64,6 +67,7 @@ Notes:
   in the workflow is all the authorization it needs.
 
 ## Set up GitLab Pages
+_The same build, deployed by GitLab's pages job._
 
 The configuration is `.gitlab-ci.yml`.
 
@@ -101,6 +105,7 @@ Notes:
   (`pages_external_url` in `gitlab.rb`); everything else is identical.
 
 ## Optional site features
+_Environment toggles for the dashboard and historical versions._
 
 `scripts/build_pages.sh` honors two environment toggles, set in the CI
 configuration's `env:` or `variables:` block. Both are on for this
@@ -129,6 +134,7 @@ commit, and the tool versions — computed automatically from the CI
 environment. There's nothing to configure.
 
 ## Publish more than one BOM
+_One call to bomgen per assembly, plus a hand-written index page._
 
 `scripts/build_pages.sh` writes one `index.html`. For several assemblies,
 call bomgen once per input inside the build step, give each an explicit

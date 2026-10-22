@@ -18,6 +18,7 @@ test = ["pytest"]
 bomgen = "bomgen:main"
 
 [project.urls]
+Homepage = "https://github.com/douglase/pdmbomgen/blob/main/README.md"
 Repository = "https://github.com/douglase/pdmbomgen"
 
 [tool.setuptools]

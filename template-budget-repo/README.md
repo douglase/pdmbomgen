@@ -1,10 +1,15 @@
 # Budget repository template — the primary cost model
+_Starting point for the repository that owns a project's spec assignments and cost estimates._
 
-This folder is the starting point for a **budget repository**: the
-version-controlled home of a project's spec assignments and cost
-estimates, published as a dashboard and a downloadable budget workbook.
-It's deliberately separate from the vault repository (which holds the PDM
-BOM export) and from pdmbomgen (the tool):
+<!-- When instantiating this template: rename the title to your new
+     repository's name, delete this comment, and work through "Set it up"
+     below. -->
+
+This folder is the starting point for a **budget repository**:
+the version-controlled home of a project's spec assignments and cost estimates,
+published as a dashboard and a downloadable budget workbook.
+It's deliberately separate from the vault repository (which holds the PDM BOM export)
+and from pdmbomgen (the tool):
 
 ```
 pdmbomgen   (tool, pip-installed from git)       — HOW to build
@@ -24,6 +29,7 @@ tables committed here, and publishes to GitLab Pages:
 - `<stem>_BOM.xlsx` — the plain BOM workbook
 
 ## The two tables you maintain
+_specs.csv maps files to categories; costs.csv prices the categories._
 
 **`specs.csv`** (`File,Spec[,Note]`) — which spec or RFQ category each
 SOLIDWORKS file belongs to. An assembly's spec covers its whole subtree,
@@ -45,6 +51,7 @@ Commit a change to either table (or wait for the weekly schedule to pick
 up vault and tool changes) and the site rebuilds.
 
 ## Set it up
+_One-time steps from empty repository to live dashboard._
 
 1. Copy this folder to a new GitLab repository and push.
 2. In `.gitlab-ci.yml` (or under **Settings → CI/CD → Variables**), set
