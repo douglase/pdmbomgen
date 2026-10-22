@@ -51,6 +51,16 @@ ignore_columns = []
 # whole subtree (a quoted weldment includes its piece parts); leaf parts
 # under no spec are reported as (unassigned) so budget gaps stay visible.
 spec_separator = ";"
+# Decoupled spec/cost tables (design D14): committed CSVs joined to the BOM
+# at build time, so the PDM export never has to carry specs and the cost
+# model is version-controlled — typically in its own repo next to this file.
+# specs_file assigns specs by filename ("File,Spec[,Note]"; the table wins
+# over the export's specs column). costs_file is the spec-level cost model
+# ("Spec,WAG,ROM,Quote[,Note]"; Best = Quote, else ROM, else WAG) — it
+# prefills the budget workbook and puts Best-dollar totals on the dashboard.
+# Paths are relative to where bomgen runs (the repo root in CI).
+specs_file = "examples/NCC-1701_specs.csv"
+costs_file = "examples/NCC-1701_costs.csv"
 # To link spec references to their controlled documents on the dashboard,
 # set spec_url_template in [links] below.
 

@@ -105,6 +105,19 @@ DEFAULT_CONFIG = {
         # cost rollup). A spec'd node covers its whole subtree; leaf parts
         # under no spec are reported as unassigned.
         "spec_separator": ";",
+        # Decoupled spec/cost tables (D14): committed CSVs joined to the BOM
+        # at build time, so the PDM export never has to carry specs and the
+        # cost model is version-controlled (typically in its own repo).
+        # specs_file: "File,Spec[,Note]" — assigns specs by filename; several
+        #   rows for one file = multi-spec (first listed wins, V11). Where a
+        #   row conflicts with a spec carried in the export's specs column,
+        #   the table wins (V14 warning).
+        "specs_file": "",
+        # costs_file: "Spec,WAG,ROM,Quote[,Note]" — spec-level dollars; any
+        #   subset of the three estimates may be filled. Best = Quote, else
+        #   ROM, else WAG. Prefills the budget workbook and puts totals on
+        #   the dashboard.
+        "costs_file": "",
     },
 }
 
@@ -651,8 +664,147 @@ def apply_diff(root: BomNode, prev_path: Path, cfg: dict,
 UNASSIGNED = "(unassigned)"
 
 
+def _spec_key(s: str) -> str:
+    """Normalized match key for filenames and spec names in the external
+    tables: whitespace-collapsed, case-insensitive (PDM filenames are)."""
+    return re.sub(r"\s+", " ", (s or "").strip()).casefold()
+
+
+def _read_table(path: Path,
+                required: tuple[str, ...]) -> tuple[list[str], list[dict]]:
+    """Small-CSV reader for the committed specs/costs tables: headers are
+    matched case/whitespace-insensitively and rows are returned keyed by
+    canonical (lowercased) header names. Also returns the header list as
+    written in the file, so callers can pass unknown columns through with
+    their original spelling."""
+    header, rows = read_csv(path)
+    hmap = {_spec_key(h): h for h in header}
+    missing = [c for c in required if _spec_key(c) not in hmap]
+    if missing:
+        sys.exit(f"bomgen: {path}: missing column(s) {', '.join(missing)} "
+                 f"(found: {', '.join(header)})")
+    out = []
+    for row in rows:
+        out.append({_spec_key(k): (v or "").strip() for k, v in row.items()
+                    if k is not None})
+    return header, out
+
+
+def read_spec_table(path: Path, warnings: list[str]) -> dict[str, dict]:
+    """specs.csv — "File,Spec[,Note]": spec assignments keyed by SolidWorks
+    filename, decoupled from the PDM export (D14). Several rows for the same
+    file accumulate as multi-spec (first listed is the budget category, V11
+    fires in the rollup as usual). Returns {match key: {"file", "specs"}}."""
+    table: dict[str, dict] = {}
+    _, rows = _read_table(path, ("file", "spec"))
+    for row in rows:
+        fname, spec = row.get("file", ""), row.get("spec", "")
+        if not fname or not spec:
+            continue
+        entry = table.setdefault(_spec_key(fname), {"file": fname, "specs": []})
+        if spec not in entry["specs"]:
+            entry["specs"].append(spec)
+    return table
+
+
+def apply_spec_table(root: BomNode, table: dict[str, dict],
+                     warnings: list[str]) -> None:
+    """Assign specs from the external table onto the tree by filename. The
+    table is the curated source, so where a node already carries a different
+    spec from the export's specs column, the table wins (V14). Table rows
+    matching no BOM file are reported stale (V13), never silently dropped."""
+    matched: set[str] = set()
+    overrode: dict[str, int] = {}
+    for n in preorder(root):
+        if n.parent is None:
+            continue
+        entry = table.get(_spec_key(n.filename))
+        if not entry:
+            continue
+        matched.add(_spec_key(n.filename))
+        if n.specs and n.specs != entry["specs"]:
+            overrode[n.filename] = 1
+        n.specs = list(entry["specs"])
+        n.spec = n.specs[0]
+    stale = sorted(set(table) - matched)
+    if stale:
+        examples = ", ".join(table[k]["file"] for k in stale[:3])
+        warnings.append(
+            f"V13: {len(stale)} specs-table "
+            f"{'entry matches' if len(stale) == 1 else 'entries match'} "
+            f"no file in this BOM (e.g. {examples}) — stale row(s) in "
+            "the specs file, or the part left the assembly")
+    if overrode:
+        examples = ", ".join(sorted(overrode)[:3])
+        warnings.append(
+            f"V14: specs table overrides the export's specs column on "
+            f"{len(overrode)} file(s) (e.g. {examples}) — the committed "
+            "table is authoritative")
+
+
+def _parse_money(s: str) -> float | None:
+    s = (s or "").strip().replace("$", "").replace(",", "")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def read_cost_table(path: Path,
+                    warnings: list[str]) -> tuple[dict[str, dict], list[str]]:
+    """costs.csv — "Spec,WAG,ROM,Quote[,Note,...]": the committed spec-level
+    cost model (D14). Any subset of the three estimates may be filled; Best =
+    Quote, else ROM, else WAG. Every OTHER column in the file (e.g. the
+    export-control set: Hardware, Technology, Software, Intent to Publish,
+    Existing Publication, Rationale, Vendor) passes through verbatim to the
+    budget workbook, in file order — add a column to the CSV and it appears
+    in the Budget sheet, no code change. Returns ({match key: cost record},
+    [passthrough column headers as written])."""
+    costs: dict[str, dict] = {}
+    dupes: dict[str, int] = {}
+    bad: dict[str, int] = {}
+    header, rows = _read_table(path, ("spec",))
+    known = {"spec", "wag", "rom", "quote", "note"}
+    extra_cols = [h for h in header if _spec_key(h) not in known]
+    for row in rows:
+        spec = row.get("spec", "")
+        if not spec:
+            continue
+        k = _spec_key(spec)
+        if k in costs:
+            dupes[spec] = 1
+            continue  # first row wins, matching multi-spec semantics
+        rec = {"spec": spec, "note": row.get("note", "")}
+        for field_ in ("wag", "rom", "quote"):
+            raw = row.get(field_, "")
+            val = _parse_money(raw)
+            if raw and val is None:
+                bad[f"{spec}:{field_.upper()}={raw}"] = 1
+            rec[field_] = val
+        rec["best"] = (rec["quote"] if rec["quote"] is not None
+                       else rec["rom"] if rec["rom"] is not None
+                       else rec["wag"])
+        rec["extra"] = {h: row.get(_spec_key(h), "") for h in extra_cols}
+        costs[k] = rec
+    if dupes:
+        warnings.append(
+            f"V15: duplicate spec row(s) in the costs file for "
+            f"{', '.join(sorted(dupes)[:3])} — first row wins")
+    if bad:
+        warnings.append(
+            f"V15: unparseable cost value(s) ignored: "
+            f"{', '.join(sorted(bad)[:3])}")
+    return costs, extra_cols
+
+
+
 def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
-                  header: list[str] | None = None) -> dict:
+                  header: list[str] | None = None,
+                  costs: dict | None = None,
+                  cost_cols: list[str] | None = None,
+                  external_specs: bool = False) -> dict:
     """Group the BOM into RFQ/procurement categories keyed by spec document.
 
     Semantics (see design §5.4): a node carrying a spec reference is a budget
@@ -708,7 +860,7 @@ def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
 
     visit(root, "")
 
-    if header is not None and col["specs"] not in header:
+    if header is not None and col["specs"] not in header and not external_specs:
         warnings.append(
             f"V10: specs column '{col['specs']}' not in input; every part is "
             "unassigned — add the column in the PDM export or map "
@@ -730,25 +882,50 @@ def budget_rollup(root: BomNode, cfg: dict, warnings: list[str],
             f"subtree (e.g. {examples}) — check for double-counted cost")
 
     specs_out = []
+    uncosted: list[str] = []
     for name in sorted(k for k in groups if k != UNASSIGNED):
         g = groups[name]
         lines = list(g["lines"].values())
         if spec_url_tmpl:
             g["url"] = spec_url_tmpl.replace("{spec}", quote(name, safe=""))
+        cost = costs.get(_spec_key(name)) if costs is not None else None
+        if costs is not None and cost is None:
+            uncosted.append(name)
         specs_out.append({"name": name, "url": g["url"], "lines": lines,
-                          "totalQty": sum(l["qty"] for l in lines)})
+                          "totalQty": sum(l["qty"] for l in lines),
+                          "cost": cost})
+    if uncosted:
+        warnings.append(
+            f"V16: {len(uncosted)} spec(s) have no entry in the costs file "
+            f"(e.g. {', '.join(uncosted[:3])}) — budget total is incomplete")
+    if costs is not None:
+        group_keys = {_spec_key(s["name"]) for s in specs_out}
+        unknown = sorted(c["spec"] for k, c in costs.items()
+                         if k not in group_keys)
+        if unknown:
+            warnings.append(
+                f"V16: {len(unknown)} costs-file "
+                f"{'entry matches' if len(unknown) == 1 else 'entries match'} "
+                f"no spec in this BOM (e.g. {', '.join(unknown[:3])}) — "
+                "stale row(s), or the spec has no assigned parts")
     ug = groups.get(UNASSIGNED, {"lines": {}})
     ulines = list(ug["lines"].values())
+    costed = [s for s in specs_out if s["cost"] and s["cost"]["best"] is not None]
     return {
         "specs": specs_out,
         "unassigned": {"name": UNASSIGNED, "url": "", "lines": ulines,
-                        "totalQty": sum(l["qty"] for l in ulines)},
+                        "totalQty": sum(l["qty"] for l in ulines),
+                        "cost": None},
+        "costed": costs is not None,
+        "costCols": list(cost_cols or []),
         "counts": {
             "specs": len(specs_out),
             "lines": sum(len(s["lines"]) for s in specs_out),
             "unassignedLines": len(ulines),
             "totalQty": sum(s["totalQty"] for s in specs_out)
                         + sum(l["qty"] for l in ulines),
+            "costedSpecs": len(costed),
+            "totalBest": sum(s["cost"]["best"] for s in costed),
             "changed": sum(1 for s in specs_out for l in s["lines"]
                            if l.get("diff"))
                        + sum(1 for l in ulines if l.get("diff")),
@@ -764,13 +941,14 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
                       warnings: list[str] | None = None,
                       source_rev: str = "", historical: str = "",
                       provenance: dict | None = None) -> None:
-    """Budget workbook: sheet "Budget" = per-spec rollup driven by live
-    SUMIF/COUNTIF formulas over sheet "Parts", the costing template where
-    unit WAG / ROM / Quote get typed in (shaded input columns). Ext costs and
-    the Best chain (Quote > ROM > WAG) are formulas, so the workbook keeps
-    rolling up as estimates mature — the point of the template. (This is a
-    working costing sheet, unlike the static BOM report; formulas are
-    deliberate here.)"""
+    """Budget workbook, the spec-level primary cost model (D14): sheet
+    "Budget" has one row per spec with shaded WAG / ROM / Quote input cells —
+    prefilled from the committed costs file when one is configured — plus
+    live formulas (Best = Quote, else ROM, else WAG; line-item counts and
+    quantities SUMIF'd from sheet "Parts"). Sheet "Parts" is the structural
+    listing of what each spec covers. Formulas are a deliberate exception to
+    the BOM report's no-formulas rule — this is a working costing sheet. To
+    persist edited numbers, copy them back into the committed costs file."""
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -784,11 +962,10 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
 
     wb = openpyxl.Workbook()
 
-    # ---------------- Parts sheet (the costing template)
+    # ---------------- Parts sheet (what each spec covers)
     ps = wb.create_sheet("Parts")
     p_headers = ["Spec", "Part Number", "Part Name", "Config", "COTS",
-                 "Qty (Total)", "Unit WAG", "Unit ROM", "Unit Quote",
-                 "Unit Best", "Ext WAG", "Ext ROM", "Ext Quote", "Ext Best"]
+                 "Qty (Total)", "Uses"]
     for j, h in enumerate(p_headers, 1):
         c = ps.cell(row=1, column=j, value=h)
         c.font, c.border = F(11, True), head_border
@@ -803,33 +980,21 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
             ps.cell(row=r, column=4, value=line["config"])
             ps.cell(row=r, column=5, value=line["cots"])
             ps.cell(row=r, column=6, value=line["qty"])
-            for cidx in (7, 8, 9):  # unit cost inputs
-                cell = ps.cell(row=r, column=cidx)
-                cell.fill, cell.number_format = input_fill, money
-            ps.cell(row=r, column=10,
-                    value=f'=IF(I{r}<>"",I{r},IF(H{r}<>"",H{r},'
-                          f'IF(G{r}<>"",G{r},"")))')
-            ps.cell(row=r, column=11, value=f'=IF(G{r}<>"",$F{r}*G{r},"")')
-            ps.cell(row=r, column=12, value=f'=IF(H{r}<>"",$F{r}*H{r},"")')
-            ps.cell(row=r, column=13, value=f'=IF(I{r}<>"",$F{r}*I{r},"")')
-            ps.cell(row=r, column=14, value=f'=IF(J{r}<>"",$F{r}*J{r},"")')
-            for cidx in range(10, 15):
-                ps.cell(row=r, column=cidx).number_format = money
-            for cidx in range(1, 15):
+            ps.cell(row=r, column=7, value=line["occ"])
+            for cidx in range(1, 8):
                 ps.cell(row=r, column=cidx).font = F(11)
             if line.get("diff"):  # changed/added vs previous version
                 green = PatternFill("solid", fgColor=DIFF_GREEN)
-                for cidx in (1, 2, 3, 4, 5, 6):  # data cells, not cost inputs
+                for cidx in range(1, 8):
                     ps.cell(row=r, column=cidx).fill = green
             r += 1
     p_last = r - 1
-    for j, w in enumerate([22, 24, 52, 14, 7, 11, 10, 10, 10, 10,
-                            12, 12, 12, 12], 1):
+    for j, w in enumerate([22, 24, 52, 14, 7, 11, 7], 1):
         ps.column_dimensions[get_column_letter(j)].width = w
     ps.freeze_panes = "A2"
-    ps.auto_filter.ref = f"A1:N{max(p_last, 1)}"
+    ps.auto_filter.ref = f"A1:G{max(p_last, 1)}"
 
-    # ---------------- Budget sheet (rollup by spec, formula-linked)
+    # ---------------- Budget sheet (the spec-level cost model)
     bs = wb.active
     bs.title = "Budget"
     t = bs.cell(row=1, column=1, value="Hardware Budget by Specification")
@@ -846,47 +1011,65 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
         meta_cell.font = Font(name=fontname, size=9, color="0563C1",
                               underline="single")
     bs.cell(row=3, column=1,
-            value="Enter unit costs on the Parts sheet (shaded WAG/ROM/Quote "
-                  "columns); every figure here rolls up live. Best = Quote, "
-                  "else ROM, else WAG.").font = F(9)
+            value="Spec-level cost model: WAG / ROM / Quote per spec (shaded "
+                  "cells; prefilled from the committed costs file when "
+                  "configured). Best = Quote, else ROM, else WAG. Edits made "
+                  "here persist only if copied back into the costs file — "
+                  "this workbook is regenerated on every build.").font = F(9)
+    # passthrough columns from the costs file (e.g. the export-control set)
+    # sit between Note and the Spec Document link, in file order
+    xcols = rollup.get("costCols", [])
+    b_headers = (["Spec", "Line Items", "Total Qty", "WAG", "ROM", "Quote",
+                  "Best", "Note"] + xcols + ["Spec Document"])
+    ncols = len(b_headers)
+    doc_col = ncols
     if historical:
         h = bs.cell(row=5, column=1,
                     value=f"⚠ HISTORICAL VERSION — {historical}")
         h.font = Font(name=fontname, size=11, bold=True, color="7A4E00")
         h.fill = PatternFill("solid", fgColor=HIST_YELLOW)
-        bs.merge_cells(start_row=5, start_column=1, end_row=5, end_column=8)
+        bs.merge_cells(start_row=5, start_column=1, end_row=5,
+                       end_column=ncols)
     if warnings:
         wcell = bs.cell(row=4, column=1, value="⚠ " + " · ".join(
             banner_lines(warnings)))
         wcell.font = Font(name=fontname, size=9, color="7A4E00")
         wcell.fill = PatternFill("solid", fgColor="FFF3C4")
-        bs.merge_cells(start_row=4, start_column=1, end_row=4, end_column=8)
+        bs.merge_cells(start_row=4, start_column=1, end_row=4,
+                       end_column=ncols)
         wcell.alignment = Alignment(wrap_text=True, vertical="top")
         bs.row_dimensions[4].height = max(15, 12 * len(banner_lines(warnings)))
 
-    b_headers = ["Spec", "Line Items", "Total Qty", "Ext WAG", "Ext ROM",
-                 "Ext Quote", "Ext Best", "Spec Document"]
     hrow = 6
     for j, h in enumerate(b_headers, 1):
         c = bs.cell(row=hrow, column=j, value=h)
         c.font, c.border = F(11, True), head_border
     r = hrow + 1
-    names = [g["name"] for g in all_groups]
-    for name in names:
+    for g in all_groups:
+        name, cost = g["name"], g.get("cost")
         bs.cell(row=r, column=1, value=name).font = F(11, True)
         bs.cell(row=r, column=2, value=f'=COUNTIF(Parts!$A:$A,A{r})')
         bs.cell(row=r, column=3, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$F:$F)')
-        bs.cell(row=r, column=4, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$K:$K)')
-        bs.cell(row=r, column=5, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$L:$L)')
-        bs.cell(row=r, column=6, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$M:$M)')
-        bs.cell(row=r, column=7, value=f'=SUMIF(Parts!$A:$A,A{r},Parts!$N:$N)')
-        for j in range(4, 8):
-            bs.cell(row=r, column=j).number_format = money
-        for j in range(2, 8):
+        for j, field_ in ((4, "wag"), (5, "rom"), (6, "quote")):
+            c = bs.cell(row=r, column=j)
+            val = cost.get(field_) if cost else None
+            if val is not None:
+                c.value = val
+            c.fill, c.number_format = input_fill, money
+        bs.cell(row=r, column=7,
+                value=f'=IF(F{r}<>"",F{r},IF(E{r}<>"",E{r},'
+                      f'IF(D{r}<>"",D{r},"")))').number_format = money
+        if cost and cost.get("note"):
+            bs.cell(row=r, column=8, value=cost["note"])
+        for off, h in enumerate(xcols):
+            val = cost.get("extra", {}).get(h, "") if cost else ""
+            if val:
+                bs.cell(row=r, column=9 + off, value=val)
+        for j in range(2, 9 + len(xcols)):
             bs.cell(row=r, column=j).font = F(11)
-        url = next((g["url"] for g in all_groups if g["name"] == name), "")
+        url = g.get("url", "")
         if url:
-            c = bs.cell(row=r, column=8, value=url)
+            c = bs.cell(row=r, column=doc_col, value=url)
             c.hyperlink, c.font = url, Font(name=fontname, size=10,
                                             color="0563C1",
                                             underline="single")
@@ -905,13 +1088,14 @@ def write_budget_xlsx(rollup: dict, cfg: dict, src_name: str, out: Path,
     pc = bs.cell(row=r + 2, column=1, value=_provenance_cell(cfg, provenance))
     pc.font = F(8)
     bs.merge_cells(start_row=r + 2, start_column=1, end_row=r + 2,
-                   end_column=8)
+                   end_column=ncols)
     if provenance and provenance.get("source_url"):
         pc.hyperlink = provenance["source_url"]
         pc.font = Font(name=fontname, size=8, color="0563C1",
                        underline="single")
 
-    for j, w in enumerate([26, 11, 10, 13, 13, 13, 13, 40], 1):
+    widths = [26, 11, 10, 13, 13, 13, 13, 28] + [16] * len(xcols) + [40]
+    for j, w in enumerate(widths, 1):
         bs.column_dimensions[get_column_letter(j)].width = w
     bs.freeze_panes = f"A{hrow + 1}"
 
@@ -1325,6 +1509,13 @@ def main(argv=None) -> int:
     ap.add_argument("--budget", type=Path, nargs="?", const=True, default=None,
                     help="write the spec/RFQ budget workbook (rollup sheet + "
                          "WAG/ROM/Quote costing template with live formulas)")
+    ap.add_argument("--specs-csv", type=Path, default=None, metavar="PATH",
+                    help="spec-assignment table ('File,Spec[,Note]') joined to "
+                         "the BOM by filename; overrides [budget].specs_file")
+    ap.add_argument("--costs-csv", type=Path, default=None, metavar="PATH",
+                    help="spec-level cost table ('Spec,WAG,ROM,Quote[,Note]') "
+                         "prefilling the budget workbook and dashboard; "
+                         "overrides [budget].costs_file")
     ap.add_argument("--dashboard", type=Path, nargs="?", const=True, default=None,
                     help="write the spec/RFQ budget dashboard page (rollup of "
                          "parts grouped by spec document)")
@@ -1376,7 +1567,37 @@ def main(argv=None) -> int:
         cfg["materials"]["enabled"] = True
         cfg["materials"]["cache_file"] = str(a.materials_cache)
     enrich_materials(root, cfg, warnings)
-    rollup = (budget_rollup(root, cfg, warnings, header)
+    bcfg = cfg.get("budget", {})
+    costs = None
+    cost_cols: list[str] = []
+    external_specs = False
+    if a.budget or a.dashboard:
+        # config-given table paths resolve relative to the config file, so a
+        # historical tag rebuild (-c <extracted tree>/bomgen.toml) reads the
+        # tag's own tables, not today's; CLI flags resolve from cwd as typed
+        base = (Path(cfg["_config_path"]).parent if cfg.get("_config_path")
+                else Path("."))
+        specs_path = a.specs_csv or ((base / bcfg["specs_file"])
+                                     if bcfg.get("specs_file") else None)
+        if specs_path is not None:
+            if specs_path.is_file():
+                apply_spec_table(root, read_spec_table(specs_path, warnings),
+                                 warnings)
+                external_specs = True
+            else:
+                warnings.append(f"V13: specs file not found: {specs_path} — "
+                                "table-based spec assignment skipped")
+        costs_path = a.costs_csv or ((base / bcfg["costs_file"])
+                                     if bcfg.get("costs_file") else None)
+        if costs_path is not None:
+            if costs_path.is_file():
+                costs, cost_cols = read_cost_table(costs_path, warnings)
+            else:
+                warnings.append(f"V16: costs file not found: {costs_path} — "
+                                "budget outputs carry no dollars")
+    rollup = (budget_rollup(root, cfg, warnings, header, costs=costs,
+                            cost_cols=cost_cols,
+                            external_specs=external_specs)
               if (a.budget or a.dashboard) else None)
     if rollup is not None:
         rollup["diffed"] = a.diff_against is not None
@@ -1406,6 +1627,16 @@ def main(argv=None) -> int:
                       f"(spec_url_template = {tmpl!r}, {src_cfg}): "
                       f"{linked}/{n} spec group(s) linked, e.g. "
                       f"{next(s['url'] for s in rollup['specs'] if s.get('url'))}",
+                      file=sys.stderr)
+            if rollup["costed"]:
+                c = rollup["counts"]
+                print(f"info: costs: {c['costedSpecs']}/{c['specs']} spec(s) "
+                      f"costed, total Best ${c['totalBest']:,.0f}",
+                      file=sys.stderr)
+            else:
+                print("info: costs: no costs file configured "
+                      "([budget].costs_file / --costs-csv) — budget workbook "
+                      "cost cells start blank, dashboard shows no dollars",
                       file=sys.stderr)
 
     prov = {"source": a.source_path or str(a.input),

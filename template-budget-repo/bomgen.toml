@@ -1,0 +1,47 @@
+# bomgen configuration for the BUDGET repo — the primary cost model.
+# The BOM export itself is cloned from the vault repo by CI (.gitlab-ci.yml);
+# this file points bomgen at the committed spec/cost tables next to it.
+
+[project]
+title_line   = "HARDWARE BUDGET DRAFT"
+project_box  = "PROJECT NAME AND TITLE BOX"
+system_name  = "My Subsystem"
+assembly_number      = "TOP-LEVEL-00"
+assembly_name        = "Top Level Assembly"
+assembly_description = ""
+contact_name = ""
+contact_info = ""
+
+# [columns] usually needs nothing here: with specs_file below, the PDM
+# export does NOT need a specs column at all. Map other columns only if
+# your export's headers differ from the defaults (Level, Qty, Number, ...).
+
+[budget]
+# The two committed tables that make this repo the cost model (design D14):
+# specs.csv  "File,Spec[,Note]"        — which spec/RFQ category each
+#            SolidWorks file belongs to; a spec'd assembly covers its whole
+#            subtree. Rows for files no longer in the BOM warn (V13).
+# costs.csv  "Spec,WAG,ROM,Quote[,Note,...]" — spec-level dollars; fill any
+#            subset, Best = Quote, else ROM, else WAG. Uncosted specs and
+#            stale rows warn (V16). "$1,234.50" and plain numbers both parse.
+#            EVERY OTHER column passes through to the Budget sheet verbatim,
+#            in file order — the template ships the export-control review
+#            set (Hardware / Technology / Software / Intent to Publish
+#            Research Product Design / Existing Publication / Rationale /
+#            Vendor); add or remove columns freely, no config change needed.
+# Paths are relative to this file.
+specs_file = "specs.csv"
+costs_file = "costs.csv"
+spec_separator = ";"
+
+[links]
+# "spec doc ↗" links on the dashboard + hyperlinks in the budget workbook;
+# {spec} is URL-encoded. Point at your document-control system:
+# spec_url_template = "https://docs.example.edu/{spec}"
+spec_url_template = ""
+# Optional PDM web-viewer links for filenames (see the pdmbomgen README):
+file_url_template = ""
+found_in_strip = ""
+
+[output]
+excel_font = "Aptos Narrow"

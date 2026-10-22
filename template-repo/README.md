@@ -1,4 +1,8 @@
 # vault-bom-template
+_Starting point for a repository that owns one PDM vault's BOM export and publishes it as a compiled report._
+
+<!-- When instantiating this template: rename the title to your new
+     repository's name, delete this comment, and follow SETUP.md. -->
 
 A minimal starting point for a repo that owns **one PDM vault's BOM
 export**: the CSV/XML lives here under version control, [pdmbomgen]
@@ -37,11 +41,13 @@ therefore which state of the vault — it was generated from.
 ## How upstream tracking works
 
 Both CI configs reinstall pdmbomgen from `requirements.txt` on every run
-— they never cache or vendor it — and a scheduled weekly rebuild (already
-configured) reruns the build even if this repo's own CSV hasn't changed.
-So a fix merged into pdmbomgen's `main` branch reaches this site within a
-week even if nobody touches this repo. See `../BOMGEN_DESIGN.md` §8.1 in
-the pdmbomgen repo for the design rationale and the tag-pinning trade-off.
+— they never cache or vendor it — and a weekly scheduled rebuild reruns
+the build even if this repo's own CSV hasn't changed (preset in the
+GitHub workflow; on GitLab you create the schedule once — see `SETUP.md`
+§6b). So a fix merged into pdmbomgen's `main` branch reaches this site
+within a week even if nobody touches this repo. See
+`../BOMGEN_DESIGN.md` §8.1 in the pdmbomgen repo for the design
+rationale and the tag-pinning trade-off.
 
 ## Local build
 

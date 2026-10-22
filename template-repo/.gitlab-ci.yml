@@ -50,3 +50,23 @@ pages:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG   # pushing a tag republishes with the new version
+
+# Optional: when a separate budget repo (template-budget-repo pattern)
+# builds its dashboard from THIS vault's BOM, ping it on every push to the
+# default branch so its site rebuilds immediately instead of waiting for
+# its weekly schedule. To enable, set a CI/CD variable BUDGET_REPO_PROJECT
+# to the budget project's full path (e.g. "group/subgroup/budget-esc") —
+# unset, this job simply doesn't exist. Requirements: GitLab 15.3+ (for
+# the variable in trigger:project) and the user whose push runs this
+# pipeline must have at least Developer access to the budget project.
+# On older GitLab, use a pipeline trigger token instead: create one in the
+# budget repo (Settings > CI/CD > Pipeline trigger tokens), store it here
+# as a masked variable, and replace this job's trigger: with
+#   script: curl -sS --fail -X POST -F "token=$BUDGET_TRIGGER_TOKEN"
+#     -F "ref=main" "$CI_API_V4_URL/projects/<budget-project-id>/trigger/pipeline"
+trigger_budget_rebuild:
+  needs: []   # fire right away; the budget repo clones this repo fresh anyway
+  trigger:
+    project: $BUDGET_REPO_PROJECT
+  rules:
+    - if: $BUDGET_REPO_PROJECT && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

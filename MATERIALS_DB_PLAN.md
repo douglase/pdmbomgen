@@ -1,4 +1,5 @@
 # Plan: material-property enrichment from `materials_database`
+_How BOM rows gain density, CTE, and outgassing properties from a committed database export._
 
 **Status: Stage B implemented** (decision D10, `[materials]` config +
 `enrich_materials()` in `bomgen/__init__.py`). bomgen now reads a committed
@@ -10,7 +11,8 @@ unnecessary when the export JSON is committed to the repo directly.
 
 1. Export the database: on the materials_database web UI, or
    `GET /export/raw-json`, download the JSON array of material documents.
-2. Commit that file next to your BOM export (e.g. `vault/materials.json`).
+2. Commit that file next to your BOM export (for example
+   `vault/materials.json`).
 3. In `bomgen.toml`, enable `[materials]` and list the property keys to show:
    ```toml
    [materials]

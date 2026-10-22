@@ -28,6 +28,13 @@ pages:
     - pip install ".[test]"
     - python -m pytest tests/ -q
     - bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" public
+    # Sphinx documentation (UASAL guide configuration: rtd theme, Edit on
+    # GitHub, fail-on-warning html + linkcheck), published under /docs/ on
+    # the same Pages site.
+    - pip install -r docs/requirements.txt
+    - sphinx-build -M html docs/source docs/build --fail-on-warning
+    - sphinx-build -M linkcheck docs/source docs/build --fail-on-warning
+    - cp -r docs/build/html public/docs
   artifacts:
     paths:
       - public
