@@ -36,7 +36,7 @@ In CI, setting `BUILD_DASHBOARD=1` makes `scripts/build_pages.sh` publish the da
 ## Step 1: Assign specs in specs.csv
 _Each row maps one CAD file to a category; the PDM export itself needs no specs column._
 
-```csv
+```text
 File,Spec,Note
 NCC-FA004.SLDASM,RFQ-WELD-001,injector mount weldment — one quote covers the subtree
 NCC-FP005.SLDPRT,RFQ-MACH-001,
@@ -75,7 +75,7 @@ _Each row costs one spec; costing is per category, not per part._
 A category gets one WAG/ROM/Quote set
 (wild guess, rough order of magnitude, vendor quote).
 
-```csv
+```text
 Spec,WAG,ROM,Quote,Note,Hardware,Technology,Software,Intent to Publish Research Product Design,Existing Publication,Rationale,Vendor
 RFQ-WELD-001,25000,18500,,ROM from vendor letter 2026-06,EAR99,EAR99,,Yes,,structural weldment; no controlled technology,Starfleet Fabrication
 RFQ-MACH-001,12000,,,WAG pending drawing release,EAR99,,,Yes,,machined from public drawings,TBD

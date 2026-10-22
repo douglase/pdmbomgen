@@ -44,6 +44,19 @@ jobs:
         run: python -m pytest tests/ -q
       - name: Build site (index.html + .xlsx)
         run: bash scripts/build_pages.sh "$BOM_INPUT" "$BOM_CONFIG" _site
+      # Sphinx documentation in the UASAL Development Guide's configuration
+      # (rtd theme, Edit on GitHub, fail-on-warning html + linkcheck). It is
+      # folded into the same Pages artifact under /docs/ rather than deployed
+      # by a separate workflow, because a repository gets one Pages site and
+      # the BOM demo owns the root.
+      - name: Install Sphinx (pinned, same versions as local builds)
+        run: pip install -r docs/requirements.txt
+      - name: Build Sphinx documentation
+        run: sphinx-build -M html docs/source docs/build --fail-on-warning
+      - name: Perform link check
+        run: sphinx-build -M linkcheck docs/source docs/build --fail-on-warning
+      - name: Add documentation to the site under /docs/
+        run: cp -r docs/build/html _site/docs
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

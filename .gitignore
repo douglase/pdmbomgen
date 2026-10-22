@@ -7,3 +7,5 @@ public/
 # local pip build artifacts
 build/
 *.egg-info/
+docs/build/
+docs/source/_docs/

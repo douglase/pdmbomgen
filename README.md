@@ -129,6 +129,10 @@ _Both CI configurations compile and deploy the reports on every push._
 Both run the tests, call [`scripts/build_pages.sh`](scripts/build_pages.sh), and publish the example BOM by default;
 point `BOM_INPUT` and `BOM_CONFIG` at your own export.
 Step-by-step instructions: [`PAGES_SETUP.md`](PAGES_SETUP.md).
+The same build renders this documentation as a Sphinx site
+(in the [UASAL Development Guide](https://uasal.github.io/uasal_development_guide/)'s theme and configuration,
+with Edit on GitHub buttons)
+under `/docs/` of the published site — see [`docs/`](docs/).
 
 ### Command-line reference
 
