@@ -5,6 +5,7 @@
 # (https://uasal.github.io/uasal_development_guide/); see
 # https://www.sphinx-doc.org/en/master/usage/configuration.html for the rest.
 
+import re
 import shutil
 from pathlib import Path
 
@@ -31,12 +32,28 @@ _DOCS = [
     'MATERIALS_DB_PLAN.md',
     'BOMGEN_DESIGN.md',
 ]
+_GITHUB = 'https://github.com/douglase/pdmbomgen'
+_LINK = re.compile(r'(\]\()([^)\s]+)(\))')
+
+
+def _github_link(match):
+    # Links between rendered guides stay local; any other repo-relative
+    # target (LICENSE, bomgen.toml, examples/..., template-repo/...) is not
+    # published in _docs/, so point it at the file or folder on GitHub.
+    target = match.group(2)
+    path = target.split('#', 1)[0]
+    if not path or '://' in path or path.startswith('mailto:') or path in _DOCS:
+        return match.group(0)
+    kind = 'tree' if (_REPO / path).is_dir() else 'blob'
+    return f'{match.group(1)}{_GITHUB}/{kind}/main/{target}{match.group(3)}'
+
+
 _dest = Path(__file__).resolve().parent / '_docs'
 shutil.rmtree(_dest, ignore_errors=True)
 _dest.mkdir()
 for _name in _DOCS:
-    _text = (_REPO / _name).read_text(encoding='utf-8')
-    _url = f'https://github.com/douglase/pdmbomgen/blob/main/{_name}'
+    _text = _LINK.sub(_github_link, (_REPO / _name).read_text(encoding='utf-8'))
+    _url = f'{_GITHUB}/blob/main/{_name}'
     (_dest / _name).write_text(f'---\ngithub_url: {_url}\n---\n\n' + _text,
                                encoding='utf-8')
 
@@ -47,14 +64,6 @@ myst_heading_anchors = 3      # GitHub-style #section links keep working
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-suppress_warnings = [
-    # Repo-relative links to non-documentation files (LICENSE, bomgen.toml,
-    # scripts/..., template-repo/...) are valid on GitHub, which stays the
-    # canonical renderer of these Markdown files; inside Sphinx they have no
-    # target, so the cross-reference warnings are expected and suppressed.
-    'myst.xref_missing',
-]
 
 # -- Options for HTML output -------------------------------------------------
 
