@@ -29,6 +29,87 @@ cost roll-up, mass roll-up (see §10 Future Work).
   Bommer) — confirm the niche; closed source.
 - No open-source PDM-CSV-specific parser found → clean-room implementation.
 
+### 1.1 Data flow at a glance
+
+Who hands what to whom, across the three repos (§8.1, D7/D14) and down
+through one CI build:
+
+```
+                     SolidWorks PDM (CAD truth)
+                           │  CSV/XML export, committed by hand
+                           ▼
+┌─ vault repo (the geometry) ─────┐
+│  vault/<export>.csv             │ git clone at CI time (read-only)
+│  bomgen.toml                    ├─────────────────────────────────────┐
+│  CI config +                    │                                     ▼
+│  scripts/build_pages.sh         │  ┌─ budget repo (the cost model) ────────┐
+└───────────────┬─────────────────┘  │  vault-src/<export>.csv   (the clone) │
+                │                    │  specs.csv    File → Spec             │
+                │ push / tag /       │  costs.csv    Spec → WAG/ROM/Quote    │
+                │ weekly schedule    │  bomgen.toml  [budget].*_file         │
+                │ runs its CI        │  CI config +                          │
+                │                    │  scripts/build_pages.sh               │
+                │                    └───────────────┬───────────────────────┘
+                │                                    │ its CI also computes
+                │                                    │ BOM_SOURCE_REV / _URL,
+                │                                    │ BOM_PREV_FILE from the
+                │                                    │ clone's git history
+                ▼                                    ▼
+   CI job (.gitlab-ci.yml / pages.yml):
+     pip install pdmbomgen @main   ◄── pdmbomgen repo (this one): the
+                │                      bomgen package + template.html +
+                ▼                      dashboard.html ride along inside it
+   scripts/build_pages.sh  INPUT CONFIG OUTDIR
+     · echoes which tool compiles ("compiler: bomgen 0.1.0 (<commit>)")
+     · git facts → --source-rev --repo --branch --commit --source-url
+       (or the BOM_* env overrides above, when INPUT lives in the clone)
+     · previous revision of INPUT → --diff-against (green highlighting)
+     · BUILD_HISTORY=1: git-archives each tag, reruns bomgen per tag
+                │  one bomgen invocation per page set
+                ▼
+   bomgen CLI (pipeline below)
+                │
+                ▼
+   OUTDIR/  index.html · <stem>_BOM.xlsx · dashboard.html ·
+            <stem>_Budget.xlsx · versions.js · v/<tag>/…
+                │  uploaded as the Pages artifact
+                ▼
+   GitHub Pages / GitLab Pages   (outputs cross-link by relative
+   sibling hrefs, so the same files work on any host or file://)
+```
+
+Inside one bomgen invocation (`main()`), in execution order — side inputs
+join the chain where they are consumed:
+
+```
+   INPUT.csv/.xml           bomgen.toml ──► load_config
+         │                                       │ cfg (everything below)
+         ▼                                       ▼
+   read_csv / read_xml ──rows+header──► build_tree   (V1–V6, R1)
+                                            │ tree of BomNode
+                                            ▼
+                                         derive     qty roll-up, part numbers,
+                                            │       COTS, PDM file links,
+                                            │       specs from the export col
+   PREV export ─────────────────────► apply_diff    (row identity: filename
+   (--diff-against, from build_pages)       │        within parent, D12)
+   materials dump ──────────────► enrich_materials  (V8–V9)
+   ([materials].cache_file)                 │
+   specs.csv ──► read_spec_table ► apply_spec_table (V13–V14; the table
+   ([budget].specs_file)                    │        wins over the column)
+   costs.csv ──► read_cost_table ───────────┤
+   ([budget].costs_file)                    ▼
+                                      budget_rollup (V10–V12, V15–V16;
+                                            │        cost + Best per spec)
+         ┌───────────────┬──────────────────┼────────────────────┐
+         ▼               ▼                  ▼                    ▼
+    write_excel      write_html     write_budget_xlsx     write_dashboard
+   <stem>_BOM.xlsx   index.html    <stem>_Budget.xlsx     dashboard.html
+                  (template.html)   (W/R/Q prefilled       (dashboard.html
+                                     from costs.csv)        template)
+         └── every output carries the warning banner + provenance block ──┘
+```
+
 ---
 
 ## 2. Input Format Specification
@@ -299,21 +380,55 @@ another spec'd subtree is allowed but flagged (V12 — possible double-count).
 
 Two outputs, both optional and off unless requested:
 
-- **Budget workbook** (`write_budget_xlsx`): sheet *Budget* = one row per
-  spec, `COUNTIF`/`SUMIF`-linked to sheet *Parts* — the costing template
-  where unit **WAG / ROM / Quote** are typed into shaded input columns.
-  `Unit Best = Quote, else ROM, else WAG`; extended costs are
-  `qty × unit` formulas, so the workbook keeps rolling up as estimates
-  mature. **Deliberate exception to the no-formulas rule** of the BOM
-  report (§5.1) — this is a working costing sheet, not a static snapshot.
-  Spec-document hyperlinks via `[links].spec_url_template` (`{spec}`).
+- **Budget workbook** (`write_budget_xlsx`): sheet *Budget* is the
+  **spec-level primary cost model** — one row per spec with shaded
+  **WAG / ROM / Quote** input cells, prefilled from the committed costs
+  table (D14) when one is configured, plus a `Best = Quote, else ROM, else
+  WAG` formula, a Note column, and `COUNTIF`/`SUMIF`-linked line-item/qty
+  counts from sheet *Parts* (the structural listing of what each spec
+  covers). **Deliberate exception to the no-formulas rule** of the BOM
+  report (§5.1) — this is a working costing sheet, not a static snapshot;
+  numbers edited in the workbook persist only when copied back into the
+  costs file, since every build regenerates it. Spec-document hyperlinks
+  via `[links].spec_url_template` (`{spec}`).
 - **Dashboard** (`bomgen/dashboard.html`, same self-contained packaging as
-  the BOM page): stat tiles (specs / line items / total qty / unassigned),
-  one collapsible group per spec with a single-hue quantity bar, live
-  filter, the shared yellow warning banner, and relative sibling links to
-  the budget workbook and the BOM page (same rule as the Excel download
-  button, D5). Costs are *not* on the dashboard — they live in the
-  workbook; the page shows the structural rollup the costs hang off.
+  the BOM page): stat tiles (specs / line items / total qty / unassigned —
+  plus **Budget (Best)** and **Specs costed** when a costs table is in
+  play), one collapsible group per spec with a single-hue quantity bar and
+  a **Cost (Best)** column (WAG/ROM/Quote detail in the tooltip; uncosted
+  specs flagged), live filter, the shared yellow warning banner, and
+  relative sibling links to the budget workbook and the BOM page (same
+  rule as the Excel download button, D5).
+
+**Decoupled spec/cost tables (D14).** Spec assignment and dollars live in
+two committed CSVs, joined to the BOM at build time, so the PDM export
+never has to carry a specs column and the cost model is version-controlled
+— typically in its **own budget repo** (`template-budget-repo/`) whose CI
+clones the vault repo for the export:
+
+- `[budget].specs_file` — `File,Spec[,Note]`, keyed by SolidWorks filename
+  (whitespace/case-insensitive match). Same coverage semantics as the
+  column; several rows per file = multi-spec (first wins, V11). The table
+  **wins over the export's specs column** on conflict (V14); rows matching
+  no BOM file warn (V13). With a table configured, a missing specs column
+  is not a V10 condition.
+- `[budget].costs_file` — `Spec,WAG,ROM,Quote[,Note,...]`, spec-level only
+  (owner decision). `$1,234.50`-style values parse; any subset of the
+  three estimates may be filled; duplicate/unparseable rows warn (V15).
+  Uncosted specs and cost rows naming no live spec warn (V16), and the
+  rollup carries `cost` per group plus `totalBest`/`costedSpecs` counts.
+  **Every other column passes through verbatim** to the Budget sheet (in
+  file order, between Note and Spec Document) and into the dashboard
+  tooltip — the templates ship the export-control review set (Hardware /
+  Technology / Software / Intent to Publish Research Product Design /
+  Existing Publication / Rationale / Vendor), but any column works with
+  no config or code change. Usage guide with examples: `BUDGET_GUIDE.md`.
+- Config-given paths resolve **relative to the config file**, so
+  historical tag rebuilds (§5.5) read each tag's own tables. CLI overrides:
+  `--specs-csv` / `--costs-csv`. Missing files warn (V13/V16), never abort.
+- `build_pages.sh` takes `BOM_SOURCE_REV` / `BOM_SOURCE_URL` /
+  `BOM_PREV_FILE` env overrides so a budget repo can stamp provenance and
+  diff-highlighting from its vault *clone*'s history instead of its own.
 
 CI: `scripts/build_pages.sh` publishes both when `BUILD_DASHBOARD=1`
 (opt-in so spec-less repos don't get a permanent V10 warning).
@@ -414,6 +529,10 @@ Config lookup order: `--config PATH` → `./bomgen.toml` → built-in defaults.
 | V10 | budget requested but the specs column is missing, or leaf parts are covered by no spec | warning (parts land in "(unassigned)" — budget gaps visible, not silent) |
 | V11 | a row lists multiple spec references | warning (only the first is used for cost rollup) |
 | V12 | a spec'd item nested inside another spec'd subtree | warning (possible double-counted cost) |
+| V13 | specs-table (D14) issues: configured file missing, or rows naming files absent from this BOM | warning (stale assignments surface instead of rotting) |
+| V14 | specs table overrides a differing value from the export's specs column | warning (the committed table is authoritative) |
+| V15 | costs-table rows that are duplicates (first wins) or hold unparseable values | warning |
+| V16 | costs-table issues: configured file missing, specs with no cost entry (budget total incomplete), or cost rows naming no live spec | warning |
 | R1 | duplicate dotted path repaired by re-appending zeros ("2.1"→"2.10") iff result equals next expected sibling — recovers Excel float-mangling of two-segment item numbers | warning (export direct from PDM to avoid entirely) |
 
 Errors abort before writing outputs. Warnings print to stderr **and render
@@ -438,6 +557,9 @@ bomgen INPUT.{csv|xml} [-c bomgen.toml] [--xlsx [OUT]] [--html [OUT]] [--both]
 ```
 - `--xlsx-url` overrides the HTML download-button target (§5.2, D5).
 - `--budget` / `--dashboard` write the spec/RFQ budget outputs (§5.4, D11).
+- `--specs-csv` / `--costs-csv` override `[budget].specs_file` /
+  `[budget].costs_file`, the decoupled spec-assignment and spec-level cost
+  tables (§5.4, D14).
 - `--materials-cache` overrides `[materials].cache_file` and implies
   `enabled=true` for the run (D10).
 - `--diff-against` / `--historical` drive change highlighting and the
@@ -550,3 +672,4 @@ See `template-repo/SETUP.md` for the bootstrap steps.
 | D11 | 2026-07-19 | Spec/RFQ budget outputs (§5.4): parts categorized by a spec-document reference column (`columns.specs`, adjustable; multi-ref cells split on `[budget].spec_separator`, first wins). A spec'd node covers its subtree; uncovered leaf parts land in "(unassigned)" (V10), multi-spec V11, nested-spec V12. Budget workbook = SUMIF-linked rollup + WAG/ROM/Quote costing template (**deliberate formulas exception** to §5.1's no-formulas rule); dashboard = self-contained rollup page. CI publishing opt-in via BUILD_DASHBOARD=1. |
 | D12 | 2026-07-19 | Historical phase (§5.5): `--diff-against` green change-highlighting in **all** outputs (row identity by filename-within-parent, never Level path; report-columns-only comparison + `[diff].ignore_columns`; moves are not changes; removed parts summarized in banner). Hybrid baselines: current page vs previous commit, tag pages vs previous tag. `BUILD_HISTORY=1` rebuilds every git tag with the current generator into `v/<tag>/` (skip-on-fail), `--historical` yellow chrome, and a per-directory `versions.js` dropdown loaded as an optional sibling script so single-file copies stay fully functional. |
 | D13 | 2026-07-20 | Build-provenance block in every output: collapsible `<details>` in both page headers, a linked cell in both workbooks (BOM xlsx row 14, Budget sheet below TOTAL). Records source BOM path (hyperlinked to its blob URL at the build commit), source data rev, repo/branch/build-commit, config file, and toolchain versions (bomgen, Python, openpyxl). Git facts arrive via `--repo/--branch/--commit/--source-url/--source-path` computed by build_pages.sh from CI env vars (GitHub/GitLab) or the git remote — bomgen stays VCS-agnostic; toolchain versions are self-determined. The bomgen line appends the tool's own resolved git commit — read from pip's `direct_url.json` record of the `git+https` install — since `__version__` only moves at releases and can't distinguish two builds off main. |
+| D14 | 2026-10-20 | Decoupled spec/cost tables, spec-level costing (§5.4): spec assignment (`[budget].specs_file`, "File,Spec[,Note]" keyed by filename; wins over the export's specs column, V14) and the cost model (`[budget].costs_file`, "Spec,WAG,ROM,Quote[,Note]"; Best = Quote > ROM > WAG) live in committed CSVs joined at build time — the PDM export never carries specs, and the budget repo (template-budget-repo/, whose CI clones the vault repo and stamps provenance from that clone via BOM_SOURCE_REV/BOM_SOURCE_URL/BOM_PREV_FILE overrides) is the version-controlled **primary cost model**; a high-level Smartsheet, where kept, carries over per-spec Best totals only. Budget-sheet inputs prefill from the costs file; dashboard gains Budget (Best)/Specs costed tiles and a per-spec Cost (Best) column. Config-relative table paths keep historical tag rebuilds reading each tag's own tables. Owner decisions: spec-level (not per-part) costing; separate GitLab repo. |

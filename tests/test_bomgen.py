@@ -631,20 +631,255 @@ def test_budget_workbook_structure(tmp_path):
     wb = openpyxl.load_workbook(out)
     assert wb.sheetnames == ["Budget", "Parts"]
     ps = wb["Parts"]
+    assert [c.value for c in ps[1]] == ["Spec", "Part Number", "Part Name",
+                                        "Config", "COTS", "Qty (Total)",
+                                        "Uses"]
     rows = [r for r in ps.iter_rows(min_row=2, max_col=6, values_only=True)
             if r[0]]
     # merged bracket line: qty 5 under SPEC-MACH-002
     bracket = [r for r in rows if r[1] == "NCC-FP030-02"]
     assert bracket and bracket[0][0] == "SPEC-MACH-002" and bracket[0][5] == 5
-    # unit-best + ext formulas present, and Budget sheet SUMIF-links Parts
-    assert ps["J2"].value.startswith("=IF(I2")
-    assert ps["N2"].value.startswith("=IF(J2")
+    # Budget sheet: spec-level cost model — Best chain + SUMIF-linked counts
     bs = wb["Budget"]
+    assert [c.value for c in bs[6]] == ["Spec", "Line Items", "Total Qty",
+                                        "WAG", "ROM", "Quote", "Best", "Note",
+                                        "Spec Document"]
+    assert bs["G7"].value.startswith('=IF(F7<>"",F7,IF(E7')
     cells = [c.value for row in bs.iter_rows() for c in row
              if isinstance(c.value, str)]
     assert any("SUMIF(Parts!$A:$A" in v for v in cells)
     assert any(v == "TOTAL" for v in cells)
     assert any("abc1234" in v for v in cells)           # provenance stamp
+
+
+# ------------------------------------------------ decoupled spec/cost tables
+
+SPECLESS_CSV = ("Level,Qty,Number,Name\n"
+                "1,1,NCC-FA010.SLDASM,Weldment\n"
+                "1.1,4,NCC-FP020.SLDPRT,Plate\n"
+                "2,3,NCC-FP030.SLDPRT,Bracket\n"
+                "3,1,NCC-FP032.SLDPRT,Shim\n")
+
+SPECS_TABLE = ("File,Spec,Note\n"
+               "NCC-FA010.SLDASM,SPEC-WELD-001,weldment quote\n"
+               "NCC-FP030.SLDPRT,SPEC-MACH-002,\n"
+               "NCC-GONE.SLDPRT,SPEC-MACH-002,stale\n")
+
+COSTS_TABLE = ("Spec,WAG,ROM,Quote,Note\n"
+               "SPEC-WELD-001,\"$25,000\",18500,,vendor letter\n"
+               "SPEC-MACH-002,9000,,,\n"
+               "SPEC-RETIRED-9,100,,,no parts anymore\n")
+
+
+def _tables_build(tmp_path, bom=SPECLESS_CSV, specs=SPECS_TABLE,
+                  costs=COSTS_TABLE):
+    (tmp_path / "bom.csv").write_text(bom, encoding="utf-8")
+    sp = cp = None
+    if specs is not None:
+        sp = tmp_path / "specs.csv"
+        sp.write_text(specs, encoding="utf-8")
+    if costs is not None:
+        cp = tmp_path / "costs.csv"
+        cp.write_text(costs, encoding="utf-8")
+    cfg = bomgen.load_config(None)
+    cfg["columns"]["specs"] = "Specs"
+    cfg["budget"]["specs_file"] = cfg["budget"]["costs_file"] = ""
+    warnings = []
+    header, rows = bomgen.read_csv(tmp_path / "bom.csv")
+    root = bomgen.build_tree(header, rows, cfg, warnings)
+    bomgen.derive(root, cfg)
+    if sp:
+        bomgen.apply_spec_table(root, bomgen.read_spec_table(sp, warnings),
+                                warnings)
+    costs_d, cost_cols = (bomgen.read_cost_table(cp, warnings)
+                          if cp else (None, []))
+    rollup = bomgen.budget_rollup(root, cfg, warnings, header, costs=costs_d,
+                                  cost_cols=cost_cols,
+                                  external_specs=sp is not None)
+    return rollup, warnings
+
+
+def test_spec_table_assigns_without_export_column(tmp_path):
+    """The specs table alone drives grouping: no Specs column in the export,
+    no V10 'column not in input' noise, subtree coverage still applies."""
+    rollup, warnings = _tables_build(tmp_path, costs=None)
+    by = {s["name"]: s for s in rollup["specs"]}
+    assert set(by) == {"SPEC-WELD-001", "SPEC-MACH-002"}
+    # the weldment's Plate child is covered by the table-assigned spec
+    assert [l["file"] for l in by["SPEC-WELD-001"]["lines"]] == \
+        ["NCC-FA010.SLDASM"]
+    assert not any(w.startswith("V10") and "not in input" in w
+                   for w in warnings)
+    # stale table row reported, never silent
+    assert any(w.startswith("V13") and "NCC-GONE.SLDPRT" in w
+               for w in warnings)
+    # shim is uncovered -> unassigned as usual
+    assert [l["file"] for l in rollup["unassigned"]["lines"]] == \
+        ["NCC-FP032.SLDPRT"]
+
+
+def test_spec_table_overrides_export_column(tmp_path):
+    bom = ("Level,Qty,Number,Specs\n"
+           "1,1,NCC-FA010.SLDASM,SPEC-OLD-000\n")
+    specs = "File,Spec\nNCC-FA010.SLDASM,SPEC-NEW-111\n"
+    rollup, warnings = _tables_build(tmp_path, bom=bom, specs=specs,
+                                     costs=None)
+    assert [s["name"] for s in rollup["specs"]] == ["SPEC-NEW-111"]
+    assert any(w.startswith("V14") and "NCC-FA010.SLDASM" in w
+               for w in warnings)
+
+
+def test_cost_table_parse_and_best_chain(tmp_path):
+    warnings = []
+    cp = tmp_path / "costs.csv"
+    cp.write_text(COSTS_TABLE, encoding="utf-8")
+    costs, _ = bomgen.read_cost_table(cp, warnings)
+    weld = costs[bomgen._spec_key("SPEC-WELD-001")]
+    assert weld["wag"] == 25000.0          # "$25,000" parsed
+    assert weld["rom"] == 18500.0 and weld["quote"] is None
+    assert weld["best"] == 18500.0         # ROM beats WAG, no quote
+    assert costs[bomgen._spec_key("SPEC-MACH-002")]["best"] == 9000.0
+    assert warnings == []
+
+
+def test_cost_table_duplicate_and_bad_values(tmp_path):
+    warnings = []
+    cp = tmp_path / "costs.csv"
+    cp.write_text("Spec,WAG,ROM,Quote\n"
+                  "SPEC-A,100,,\n"
+                  "SPEC-A,200,,\n"
+                  "SPEC-B,TBD,,\n", encoding="utf-8")
+    costs, _ = bomgen.read_cost_table(cp, warnings)
+    assert costs[bomgen._spec_key("SPEC-A")]["wag"] == 100.0  # first wins
+    assert costs[bomgen._spec_key("SPEC-B")]["wag"] is None
+    assert any(w.startswith("V15") and "SPEC-A" in w for w in warnings)
+    assert any(w.startswith("V15") and "TBD" in w for w in warnings)
+
+
+def test_cost_table_passthrough_columns_reach_workbook(tmp_path):
+    """Unknown costs-file columns (the export-control set: Hardware /
+    Technology / Software / publication intent / Rationale / Vendor) pass
+    through to the Budget sheet verbatim, in file order, between Note and
+    Spec Document — add a column to the CSV, get a column in the workbook."""
+    costs = ("Spec,WAG,Hardware,Technology,Software,"
+             "Intent to Publish Research Product Design,"
+             "Existing Publication,Rationale,Vendor\n"
+             "SPEC-WELD-001,25000,EAR99,EAR99,,Yes,doi:10/xyz,"
+             "no controlled tech,Acme Fab\n"
+             "SPEC-MACH-002,9000,ITAR,,,,,milspec fitting,Beta Machine\n")
+    rollup, warnings = _tables_build(tmp_path, costs=costs)
+    assert rollup["costCols"] == [
+        "Hardware", "Technology", "Software",
+        "Intent to Publish Research Product Design",
+        "Existing Publication", "Rationale", "Vendor"]
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "bom.csv", out, warnings)
+    import openpyxl
+    bs = openpyxl.load_workbook(out)["Budget"]
+    headers = [c.value for c in bs[6]]
+    assert headers == ["Spec", "Line Items", "Total Qty", "WAG", "ROM",
+                       "Quote", "Best", "Note", "Hardware", "Technology",
+                       "Software", "Intent to Publish Research Product Design",
+                       "Existing Publication", "Rationale", "Vendor",
+                       "Spec Document"]
+    rows = {bs.cell(row=r, column=1).value: r for r in range(7, 11)}
+    weld = rows["SPEC-WELD-001"]
+    assert bs.cell(row=weld, column=9).value == "EAR99"      # Hardware
+    assert bs.cell(row=weld, column=13).value == "doi:10/xyz"  # Existing Pub
+    assert bs.cell(row=weld, column=15).value == "Acme Fab"  # Vendor
+    mach = rows["SPEC-MACH-002"]
+    assert bs.cell(row=mach, column=9).value == "ITAR"
+
+
+def test_rollup_costs_totals_and_warnings(tmp_path):
+    rollup, warnings = _tables_build(tmp_path)
+    assert rollup["costed"] is True
+    c = rollup["counts"]
+    assert c["costedSpecs"] == 2 and c["totalBest"] == 18500.0 + 9000.0
+    by = {s["name"]: s for s in rollup["specs"]}
+    assert by["SPEC-WELD-001"]["cost"]["note"] == "vendor letter"
+    # a costs row naming a spec with no parts is reported stale
+    assert any(w.startswith("V16") and "SPEC-RETIRED-9" in w
+               for w in warnings)
+
+
+def test_rollup_uncosted_spec_warns(tmp_path):
+    costs = "Spec,WAG\nSPEC-WELD-001,25000\n"
+    rollup, warnings = _tables_build(tmp_path, costs=costs)
+    assert any(w.startswith("V16") and "SPEC-MACH-002" in w
+               for w in warnings)
+    assert rollup["counts"]["costedSpecs"] == 1
+
+
+def test_budget_workbook_prefilled_from_costs(tmp_path):
+    rollup, warnings = _tables_build(tmp_path)
+    cfg = bomgen.load_config(None)
+    out = tmp_path / "budget.xlsx"
+    bomgen.write_budget_xlsx(rollup, cfg, "bom.csv", out, warnings)
+    import openpyxl
+    bs = openpyxl.load_workbook(out)["Budget"]
+    rows = {bs.cell(row=r, column=1).value:
+            [bs.cell(row=r, column=j).value for j in range(2, 9)]
+            for r in range(7, 11)}
+    weld = rows["SPEC-WELD-001"]
+    assert weld[2] == 25000.0 and weld[3] == 18500.0 and weld[4] is None
+    assert weld[6] == "vendor letter"
+    assert rows["SPEC-MACH-002"][2] == 9000.0
+
+
+def test_dashboard_shows_costs(tmp_path):
+    (tmp_path / "bom.csv").write_text(SPECLESS_CSV, encoding="utf-8")
+    (tmp_path / "specs.csv").write_text(SPECS_TABLE, encoding="utf-8")
+    (tmp_path / "costs.csv").write_text(COSTS_TABLE, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n[budget]\n'
+                    'specs_file = "specs.csv"\ncosts_file = "costs.csv"\n',
+                    encoding="utf-8")
+    out = tmp_path / "dash.html"
+    rc = bomgen.main([str(tmp_path / "bom.csv"), "-c", str(cfgf),
+                      "--dashboard", str(out), "--quiet"])
+    assert rc == 0
+    page = out.read_text(encoding="utf-8")
+    assert '"costed": true' in page
+    assert '"totalBest": 27500' in page
+    assert '"note": "vendor letter"' in page
+    # without a costs file the page carries no dollars
+    cfgf.write_text('[columns]\nspecs = "Specs"\n[budget]\n'
+                    'specs_file = "specs.csv"\n', encoding="utf-8")
+    rc = bomgen.main([str(tmp_path / "bom.csv"), "-c", str(cfgf),
+                      "--dashboard", str(out), "--quiet"])
+    assert rc == 0
+    assert '"costed": false' in out.read_text(encoding="utf-8")
+
+
+def test_cli_table_flags_override_config(tmp_path):
+    (tmp_path / "bom.csv").write_text(SPECLESS_CSV, encoding="utf-8")
+    (tmp_path / "s2.csv").write_text(SPECS_TABLE, encoding="utf-8")
+    (tmp_path / "c2.csv").write_text(COSTS_TABLE, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n', encoding="utf-8")
+    out = tmp_path / "dash.html"
+    rc = bomgen.main([str(tmp_path / "bom.csv"), "-c", str(cfgf),
+                      "--dashboard", str(out),
+                      "--specs-csv", str(tmp_path / "s2.csv"),
+                      "--costs-csv", str(tmp_path / "c2.csv"), "--quiet"])
+    assert rc == 0
+    assert "SPEC-WELD-001" in out.read_text(encoding="utf-8")
+
+
+def test_missing_table_files_warn_not_crash(tmp_path):
+    (tmp_path / "bom.csv").write_text(SPECLESS_CSV, encoding="utf-8")
+    cfgf = tmp_path / "cfg.toml"
+    cfgf.write_text('[columns]\nspecs = "Specs"\n[budget]\n'
+                    'specs_file = "nope.csv"\ncosts_file = "nada.csv"\n',
+                    encoding="utf-8")
+    out = tmp_path / "dash.html"
+    rc = bomgen.main([str(tmp_path / "bom.csv"), "-c", str(cfgf),
+                      "--dashboard", str(out), "--quiet"])
+    assert rc == 0
+    page = out.read_text(encoding="utf-8")
+    assert "V13" in page and "V16" in page   # both misses surface in banner
 
 
 def test_cli_budget_dashboard_outputs(tmp_path):
