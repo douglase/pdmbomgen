@@ -746,8 +746,11 @@ def _parse_money(s: str) -> float | None:
     s = (s or "").strip().replace("$", "").replace(",", "")
     if not s:
         return None
+    from math import isfinite
+
     try:
-        return float(s)
+        value = float(s)
+        return value if isfinite(value) else None
     except ValueError:
         return None
 
